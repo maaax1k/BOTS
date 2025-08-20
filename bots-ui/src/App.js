@@ -58,6 +58,11 @@ const MODEL_OPTIONS = [
   { value: "openrouter:tngtech/deepseek-r1t2-chimera:free", label: "TNG: DeepSeek R1T2 Chimera" },
   { value: "openrouter:z-ai/glm-4.5-air:free", label: "Z.AI: GLM 4.5 Air" },
   { value: "openrouter:mistralai/mistral-small-3.2-24b-instruct:free", label: "Mistral: Mistral Small 3.2 24B" },
+  { value: "openrouter:moonshotai/kimi-dev-72b:free", label: "MoonshotAI: Kimi Dev 72B" },
+  { value: "openrouter:deepseek/deepseek-r1-0528-qwen3-8b:free", label: "DeepSeek: Deepseek R1 0528 Qwen3 8B" },
+  { value: "openrouter:deepseek/deepseek-r1-0528:free", label: "DeepSeek: R1 0528" },
+  { value: "openrouter:microsoft/mai-ds-r1:free", label: "Microsoft: MAI DS R1" },
+  { value: "openrouter:meta-llama/llama-3.3-70b-instruct:free", label: "Meta: Llama 3.3 70B Instruct" },
 ];
 
 function classNames(...xs) {
