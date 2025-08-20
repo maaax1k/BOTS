@@ -81,7 +81,9 @@ function Bubble({ role, content }) {
 }
 
 export default function App() {
-  const [apiBase, setApiBase] = useState("http://localhost:8000/api");
+  const apiBase = process.env.REACT_APP_API_BASE || "/api";
+  console.log("API base:", process.env.REACT_APP_API_BASE);
+
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [personas, setPersonas] = useState(DEFAULT_PERSONAS);
   const [personaId, setPersonaId] = useState("friendly");
