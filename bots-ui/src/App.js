@@ -82,8 +82,7 @@ function Bubble({ role, content }) {
 
 export default function App() {
   const apiBase = process.env.REACT_APP_API_BASE || "/api";
-  console.log("API base:", process.env.REACT_APP_API_BASE);
-
+  const [open, setOpen] = useState(false);
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [personas, setPersonas] = useState(DEFAULT_PERSONAS);
   const [personaId, setPersonaId] = useState("friendly");
@@ -329,94 +328,184 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-gray-50">
-      <header className="sticky top-0 z-10 border-b bg-white/70 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-4 py-3 flex items-center gap-10">
-          
+       <header className="sticky top-0 z-10 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <div className="mx-auto max-w-5xl px-3 sm:px-4 py-2 sm:py-3 flex items-center gap-2 sm:gap-10">
 
-          <nav className="flex flex-col gap-1">
-            <button
-              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "chat" ? "bg-gray-900 text-white" : "bg-white"}`}
-              onClick={() => setActiveTab("chat")}
-            >Чат</button>
-            <button
-              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "history" ? "bg-gray-900 text-white" : "bg-white"}`}
-              onClick={() => setActiveTab("history")}
-            >История</button>
-          </nav>
+        {/* Гамбургер — только мобилка */}
+        <button
+          className="inline-flex items-center justify-center sm:hidden h-9 w-9 rounded-lg border"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="mobile-panel"
+          title="Меню"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
 
-          <div className="ml-auto flex flex-wrap items-center justify-center gap-2">
-            {/* Выбор модели */}
+        {/* Вкладки — мобилка (горизонтальный скролл) */}
+        <nav className="sm:hidden -mx-1 overflow-x-auto no-scrollbar">
+          <div className="flex gap-2 px-1">
+            {[
+              { id: "chat", label: "Чат" },
+              { id: "history", label: "История" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                className={`px-3 py-1.5 rounded-lg text-sm border whitespace-nowrap ${
+                  activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"
+                }`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {/* Вкладки — десктоп (как было, только колонкой слева) */}
+        <nav className="hidden sm:flex flex-col gap-1">
+          <button
+            className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "chat" ? "bg-gray-900 text-white" : "bg-white"}`}
+            onClick={() => setActiveTab("chat")}
+          >
+            Чат
+          </button>
+          <button
+            className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "history" ? "bg-gray-900 text-white" : "bg-white"}`}
+            onClick={() => setActiveTab("history")}
+          >
+            История
+          </button>
+        </nav>
+
+        {/* Панель настроек — десктоп */}
+        <div className="ml-auto hidden sm:flex flex-wrap items-center justify-center gap-2">
+          {/* Выбор модели */}
+          <select
+            className="rounded-xl border px-3 py-2 text-sm"
+            value={model}
+            onChange={(e) => startNewThread({ modelValue: e.target.value })}
+            title="LLM модель"
+          >
+            {MODEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+
+          {/* Выбор персоны */}
+          <select
+            className="rounded-xl border px-3 py-2 text-sm"
+            value={personaId}
+            onChange={(e) => startNewThread({ persona: e.target.value })}
+            title="Персона"
+          >
+            {Object.values(personas).map((p) => (
+              <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+            ))}
+          </select>
+
+          {/* Temperature */}
+          <div className="flex items-center gap-2 text-sm px-2 py-1 rounded-xl border bg-white">
+            <span className="text-gray-600">Temp:</span>
+            <input
+              type="range"
+              min={0}
+              max={2}
+              step={0.1}
+              value={temperature}
+              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+            />
+            <span className="w-8 text-right tabular-nums">{temperature.toFixed(1)}</span>
+          </div>
+        </div>
+
+        {/* Кнопки справа — десктоп */}
+        <div className="hidden sm:flex flex-col gap-1">
+          <button
+            className="px-3 py-1 rounded-lg text-sm border bg-gray-900 text-white"
+            onClick={() => startNewThread()}
+            title="Начать новый диалог (новый тред)"
+          >
+            Новый диалог
+          </button>
+          <button
+            className={`px-3 py-1 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
+            onClick={() => setEditingPersona((v) => !v)}
+            title="Редактировать персону"
+          >
+            {editingPersona ? "Скрыть персону" : "Редактировать персону"}
+          </button>
+        </div>
+      </div>
+
+      {/* Выпадающая панель — мобилка */}
+      <div
+        id="mobile-panel"
+        className={`sm:hidden border-t overflow-hidden transition-[max-height] duration-300 ${open ? "max-h-[420px]" : "max-h-0"}`}
+      >
+        <div className="px-3 py-3 grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-1 gap-2">
+            <label className="text-xs text-gray-600">LLM модель</label>
             <select
               className="rounded-xl border px-3 py-2 text-sm"
               value={model}
-              onChange={(e) => startNewThread({ modelValue: e.target.value })} // ← было setModel(...)
+              onChange={(e) => { setOpen(false); startNewThread({ modelValue: e.target.value }); }}
               title="LLM модель"
             >
               {MODEL_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+          </div>
 
-
-            {/* Выбор персоны */}
+          <div className="grid grid-cols-1 gap-2">
+            <label className="text-xs text-gray-600">Персона</label>
             <select
               className="rounded-xl border px-3 py-2 text-sm"
               value={personaId}
-              onChange={(e) => startNewThread({ persona: e.target.value })} // ← было setPersonaId(...)
+              onChange={(e) => { setOpen(false); startNewThread({ persona: e.target.value }); }}
               title="Персона"
             >
               {Object.values(personas).map((p) => (
                 <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
               ))}
             </select>
-            
-
-
-            
-
-           
-            {/* Temperature */}
-            <div className="flex items-center gap-2 text-sm px-2 py-1 rounded-xl border bg-white">
-              <span className="text-gray-600">Temp:</span>
-              <input
-                type="range"
-                min={0}
-                max={2}
-                step={0.1}
-                value={temperature}
-                onChange={(e) => setTemperature(parseFloat(e.target.value))}
-              />
-              <span className="w-8 text-right tabular-nums">{temperature.toFixed(1)}</span>
-            </div>
-
           </div>
-          <div className="flex flex-col gap-1">
-            
 
+          <div className="grid grid-cols-[auto,1fr,auto] items-center gap-2 rounded-xl border bg-white px-3 py-2">
+            <span className="text-sm text-gray-600">Temp</span>
+            <input
+              type="range"
+              min={0}
+              max={2}
+              step={0.1}
+              value={temperature}
+              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+            />
+            <span className="text-sm tabular-nums">{temperature.toFixed(1)}</span>
+          </div>
 
-            
+          <div className="grid grid-cols-2 gap-2">
             <button
-              className="px-3 py-1 rounded-lg text-sm border bg-gray-900 text-white"
-              onClick={() => startNewThread()}
+              className="px-3 py-2 rounded-lg text-sm border bg-gray-900 text-white"
+              onClick={() => { setOpen(false); startNewThread(); }}
               title="Начать новый диалог (новый тред)"
             >
               Новый диалог
             </button>
-
-
-            {/* Редактор персоны */}
             <button
-              className={`px-3 py-1 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"
-                }`}
+              className={`px-3 py-2 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
               onClick={() => setEditingPersona((v) => !v)}
               title="Редактировать персону"
             >
               {editingPersona ? "Скрыть персону" : "Редактировать персону"}
             </button>
           </div>
-
         </div>
-      </header>
+      </div>
+    </header>
 
 
       <main className="mx-auto max-w-5xl px-4 py-4 grid gap-4 md:grid-cols-[2fr_1fr]">
