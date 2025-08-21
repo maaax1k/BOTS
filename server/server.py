@@ -9,8 +9,10 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import joinedload
 from dotenv import load_dotenv
 from typing import Optional
-
-
+from fastapi import APIRouter
+from db import session_scope
+from models import Persona, Thread
+import re
 
 from db import session_scope
 from models import Persona, Thread, Message
@@ -30,6 +32,7 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 LAST_TURNS = int(os.getenv("LAST_TURNS", "12"))
 TEMP_DEFAULT = float(os.getenv("TEMP_DEFAULT", "0.7"))
+GROQ_KEY = os.getenv("GROQ_API_KEY", "")
 
 class ChatIn(BaseModel):
     model: str          # "gemini:gemini-1.5-flash" | "ollama:llama3"
@@ -67,7 +70,13 @@ class MessageOut(BaseModel):
 class ThreadOut(BaseModel):
     id: str
     persona_id: str
+    model: str
     summary: str
+
+class ThreadUpdateIn(BaseModel):
+    persona_id: Optional[str] = None
+    model: Optional[str] = None
+    summary: Optional[str] = None
 
 
 def system_prompt(persona: Persona) -> str:
@@ -79,19 +88,32 @@ def system_prompt(persona: Persona) -> str:
         f"Границы: {persona.boundaries}.\n"
         f"Цели: {goals}.\n"
         # --- Глобальные правила стиля ---
-        "Коммуникация: пиши как реальный человек в личном чате. "
+        "Коммуникация: пиши как реальный человек в личном чате в соцсети."
         "Короткие живые реплики (1–4 предложения), иногда уточняющий вопрос.\n"
         "Запреты: не используй эмодзи, смайлики, ASCII-арт, стикеры и реакции; "
         "не используй Markdown/списки/таблицы без явной просьбы; "
         "не ставь кавычки вокруг своих фраз без необходимости.\n"
         "Тон: естественный, дружелюбный, без искусственной приподнятости и шаблонных фраз. "
         "Если чего-то не знаешь — скажи кратко и предложи уточнить. Без лишних дисклеймеров.\n"
-        "Персона: говори от первого лица, сохраняй характер и границы персоны. "
+        "Персона: говори от первого лица, как обычный человек, сохраняй характер и границы персоны. "
         "Не раскрывай, что ты ИИ/модель.\n"
         "Язык: русский, разговорный.\n"
     )
 
+def to_openai_style(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    out = []
+    for m in messages:
+        role = (m.get("role") or "user").lower()
+        # допустим только system/user/assistant
+        if role not in ("system", "user", "assistant"):
+            role = "user"
+        out.append({"role": role, "content": m.get("content", "")})
+    return out
 
+def clean_model_output(text: str) -> str:
+    # убираем блоки <think>…</think>
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    return cleaned.strip()
 
 def split_provider(spec: str):
     a, b = spec.split(":", 1)
@@ -175,6 +197,49 @@ async def call_gemini(
     finish = candidates[0].get("finishReason") if candidates else None
     return f"(Gemini не вернул текст; finishReason={finish})"
 
+async def call_groq(
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float = TEMP_DEFAULT,
+) -> str:
+    if not GROQ_KEY:
+        return "(Не задан GROQ_API_KEY)"
+
+    url = f"https://api.groq.com/openai/v1/chat/completions"
+    payload = {
+        "model": model,  # напр.: "llama-3.1-70b-versatile", "mixtral-8x7b-32768", "llama-3.2-11b-text-preview"
+        "messages": to_openai_style(messages),
+        "temperature": max(0.0, min(2.0, float(temperature))),
+        # опционально:
+        # "max_tokens": int(os.getenv("GROQ_MAX_TOKENS", "512")),
+        # "top_p": 0.95,
+        # "stop": ["</s>"],
+    }
+    headers = {
+        "Authorization": f"Bearer {GROQ_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as cli:
+            r = await cli.post(url, json=payload, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPStatusError as e:
+        try:
+            detail = e.response.json()
+        except Exception:
+            detail = e.response.text if e.response is not None else str(e)
+        return f"(Groq HTTP {e.response.status_code if e.response else ''}: {detail})"
+    except Exception as e:
+        return f"(Groq ошибка сети: {e})"
+
+    try:
+        raw = (data["choices"][0]["message"]["content"] or "").strip()
+        return clean_model_output(raw)
+    except Exception:
+        return f"(Groq: неожиданный ответ {str(data)[:300]}...)"
+
 
 async def call_openrouter(
     model: str,
@@ -224,7 +289,8 @@ async def call_openrouter(
         return f"(OpenRouter ошибка сети: {e})"
 
     try:
-        return (data["choices"][0]["message"]["content"] or "").strip()
+        raw = (data["choices"][0]["message"]["content"] or "").strip()
+        return clean_model_output(raw)
     except Exception:
         return f"(OpenRouter: неожиданный ответ {str(data)[:300]}...)"
 
@@ -264,7 +330,7 @@ async def chat(inp: ChatIn):
 
         thread = s.get(Thread, inp.threadId)
         if not thread:
-            thread = Thread(id=inp.threadId, persona_id=persona.id, summary="")
+            thread = Thread(id=inp.threadId, persona_id=persona.id, model=inp.model, summary="")
             s.add(thread)
             s.flush()
 
@@ -288,12 +354,13 @@ async def chat(inp: ChatIn):
 
     if vendor == "gemini":
         out_text = await call_gemini(model_name, messages, temperature=temp)
-    elif vendor == "ollama":
-        out_text = await call_ollama(model_name, messages, temperature=temp)
     elif vendor == "openrouter":
         out_text = await call_openrouter(model_name, messages, temperature=temp)
+    elif vendor == "groq":
+        out_text = await call_groq(model_name, messages, temperature=temp)
     else:
-        out_text = "(поддержаны только gemini:*, ollama:*, openrouter:*)"
+        out_text = "(поддержаны: gemini:*, openrouter:*, groq:*)"
+
 
 
 
@@ -308,14 +375,19 @@ async def chat(inp: ChatIn):
 def list_threads():
     with session_scope() as s:
         rows = s.execute(select(Thread)).scalars().all()
-        return [ThreadOut(id=t.id, persona_id=t.persona_id, summary=t.summary or "") for t in rows]
+        return [ThreadOut(
+            id=t.id, persona_id=t.persona_id, model=t.model or "", summary=t.summary or ""
+        ) for t in rows]
 
 @app.get("/api/threads/{thread_id}", response_model=ThreadOut)
 def get_thread(thread_id: str):
     with session_scope() as s:
         t = s.get(Thread, thread_id)
         if not t: raise HTTPException(404, "thread not found")
-        return ThreadOut(id=t.id, persona_id=t.persona_id, summary=t.summary or "")
+        return ThreadOut(
+            id=t.id, persona_id=t.persona_id, model=t.model or "", summary=t.summary or ""
+        )
+
 
 @app.get("/api/threads/{thread_id}/messages", response_model=list[MessageOut])
 def get_messages(thread_id: str):
@@ -327,11 +399,18 @@ class SummaryIn(BaseModel):
     summary: str
 
 @app.patch("/api/threads/{thread_id}")
-def update_thread_summary(thread_id: str, inp: SummaryIn):
+def update_thread(thread_id: str, inp: ThreadUpdateIn):
     with session_scope() as s:
         t = s.get(Thread, thread_id)
         if not t: raise HTTPException(404, "thread not found")
-        t.summary = inp.summary
+        if inp.persona_id is not None:
+            if not s.get(Persona, inp.persona_id):
+                raise HTTPException(400, "persona not found")
+            t.persona_id = inp.persona_id
+        if inp.model is not None:
+            t.model = inp.model
+        if inp.summary is not None:
+            t.summary = inp.summary
         return {"ok": True}
 
 @app.delete("/api/messages/{msg_id}")
@@ -377,6 +456,14 @@ def update_persona(pid: str, data: PersonaIn):
             id=p.id, name=p.name, bio=p.bio, style=p.style,
             boundaries=p.boundaries, goals=p.goals or ""
         )
+    
+@app.get("/api/personas/{pid}/system_prompt")
+def get_persona_system_prompt(pid: str):
+    with session_scope() as s:
+        p = s.get(Persona, pid)
+        if not p:
+            raise HTTPException(404, "persona not found")
+        return {"prompt": system_prompt(p)}
 
 
 @app.delete("/api/threads/{thread_id}")
@@ -389,6 +476,22 @@ def delete_thread(thread_id: str):
             raise HTTPException(404, "thread not found")
         s.delete(t)
         return {"ok": True}
+    
+@app.get("/api/threads/{thread_id}/system_messages")
+def get_thread_system_messages(thread_id: str):
+    with session_scope() as s:
+        t = s.get(Thread, thread_id)
+        if not t:
+            raise HTTPException(404, "thread not found")
+        p = s.get(Persona, t.persona_id)
+        if not p:
+            raise HTTPException(404, "persona not found")
+        return {
+            "messages": [
+                {"role": "system", "content": system_prompt(p)},
+                {"role": "system", "content": f"Контекст: {t.summary or 'пока пусто'}"},
+            ]
+        }
 
 
 

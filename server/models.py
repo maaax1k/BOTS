@@ -21,16 +21,13 @@ class Thread(Base):
     __tablename__ = "threads"
     id: Mapped[str] = mapped_column(String, primary_key=True)  # ваш threadId из фронта
     persona_id: Mapped[str] = mapped_column(ForeignKey("personas.id"), nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False, default="")  # ← НОВОЕ
     summary: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     persona: Mapped[Persona] = relationship(back_populates="threads")
-    messages: Mapped[list[Message]] = relationship(
-    back_populates="thread",
-    order_by="Message.created_at",
-    cascade="all, delete-orphan"
-)
+    messages: Mapped[list[Message]] = relationship(back_populates="thread", order_by="Message.created_at")
 
 
 class Message(Base):

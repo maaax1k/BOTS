@@ -1,7 +1,16 @@
+# === init_db.py ===
 from __future__ import annotations
-from sqlalchemy import select
+import os
+from sqlalchemy import text
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy import inspect
+
 from db import engine, session_scope
-from models import Base, Persona
+from models import Base, Persona, Thread
+
+# Можно задать дефолтную модель для новых/мигрируемых тредов через .env
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gemini:gemini-1.5-flash")
 
 DEFAULT_PERSONAS = [
     {
@@ -30,12 +39,49 @@ DEFAULT_PERSONAS = [
     },
 ]
 
-def main():
-    Base.metadata.create_all(engine)
+def ensure_threads_model_column(e: Engine):
+    """
+    Мягкая миграция: если в таблице threads нет колонки model, добавим её.
+    Для SQLite допустим простой ALTER TABLE ADD COLUMN.
+    """
+    insp = inspect(e)
+    try:
+        cols = {c["name"] for c in insp.get_columns("threads")}
+    except Exception:
+        # если таблицы нет — просто выходим, её создаст create_all
+        return
+    if "model" not in cols:
+        with e.begin() as conn:
+            # добавляем колонку
+            conn.execute(text("ALTER TABLE threads ADD COLUMN model VARCHAR NOT NULL DEFAULT ''"))
+            # заполняем дефолтом
+            conn.execute(text("UPDATE threads SET model = :m WHERE model = '' OR model IS NULL"), {"m": DEFAULT_MODEL})
+
+def seed_personas():
     with session_scope() as s:
         for p in DEFAULT_PERSONAS:
             if not s.get(Persona, p["id"]):
                 s.add(Persona(**p))
+
+def backfill_threads_model_if_empty():
+    # На случай, если колонка есть, но пустая — проставим дефолт.
+    with session_scope() as s:
+        s.execute(
+            text("UPDATE threads SET model = :m WHERE model = '' OR model IS NULL"),
+            {"m": DEFAULT_MODEL},
+        )
+
+def main():
+
+    Base.metadata.create_all(engine)
+
+    ensure_threads_model_column(engine)
+
+    seed_personas()
+
+    backfill_threads_model_if_empty()
+
+    print("DB init OK. DEFAULT_MODEL =", DEFAULT_MODEL)
 
 if __name__ == "__main__":
     main()

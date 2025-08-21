@@ -44,25 +44,30 @@ const DEFAULT_PERSONAS = {
 };
 
 const MODEL_OPTIONS = [
-  { value: "gemini:gemini-1.5-flash", label: "Gemini — 1.5 Flash (бесплатные квоты)" },
-  { value: "gemini:gemini-1.5-pro", label: "Gemini — 1.5 Pro" },
+  { value: "gemini:gemini-2.5-flash", label: "Google: Gemini — 2.5 Flash" },
+  { value: "gemini:gemini-2.0-flash", label: "Google: Gemini — 2.0 Flash" },
+  { value: "gemini:gemini-1.5-flash", label: "Google: Gemini — 1.5 Flash" },
   // { value: "ollama:llama3", label: "Ollama — Llama 3 (локально)" },
   // { value: "ollama:mistral", label: "Ollama — Mistral (локально)" },
   // { value: "ollama:gemma2:9b", label: "Ollama — Gemma 2 9B (локально)" },
   // { value: "ollama:gpt-oss:20b", label: "Ollama — GPT OSS 20B (локально)" },
   // { value: "ollama:deepseek-r1:8b", label: "Ollama — Deepseek-R1 8B (локально)" },
   // { value: "ollama:qwen3:8b", label: "Ollama — Qwen 3 8B (локально)" },
-  { value: "openrouter:openai/gpt-oss-20b:free", label: "OpenRouter — GPT-OSS 20B" },
-  { value: "openrouter:moonshotai/kimi-k2:free", label: "MoonshotAI: Kimi K2" },
-  { value: "openrouter:cognitivecomputations/dolphin-mistral-24b-venice-edition:free", label: "Venice: Uncensored" },
-  { value: "openrouter:tngtech/deepseek-r1t2-chimera:free", label: "TNG: DeepSeek R1T2 Chimera" },
-  { value: "openrouter:z-ai/glm-4.5-air:free", label: "Z.AI: GLM 4.5 Air" },
-  { value: "openrouter:mistralai/mistral-small-3.2-24b-instruct:free", label: "Mistral: Mistral Small 3.2 24B" },
-  { value: "openrouter:moonshotai/kimi-dev-72b:free", label: "MoonshotAI: Kimi Dev 72B" },
-  { value: "openrouter:deepseek/deepseek-r1-0528-qwen3-8b:free", label: "DeepSeek: Deepseek R1 0528 Qwen3 8B" },
-  { value: "openrouter:deepseek/deepseek-r1-0528:free", label: "DeepSeek: R1 0528" },
-  { value: "openrouter:microsoft/mai-ds-r1:free", label: "Microsoft: MAI DS R1" },
-  { value: "openrouter:meta-llama/llama-3.3-70b-instruct:free", label: "Meta: Llama 3.3 70B Instruct" },
+  { value: "openrouter:openai/gpt-oss-20b:free", label: "OpenRouter: GPT-OSS 20B" },
+  { value: "openrouter:moonshotai/kimi-k2:free", label: "OpenRouter: MoonshotAI: Kimi K2" },
+  { value: "openrouter:cognitivecomputations/dolphin-mistral-24b-venice-edition:free", label: "OpenRouter: Venice - Uncensored" },
+  { value: "openrouter:tngtech/deepseek-r1t2-chimera:free", label: "OpenRouter: TNG - DeepSeek R1T2 Chimera" },
+  { value: "openrouter:z-ai/glm-4.5-air:free", label: "OpenRouter: Z.AI - GLM 4.5 Air" },
+  { value: "openrouter:mistralai/mistral-small-3.2-24b-instruct:free", label: "OpenRouter: Mistral Small 3.2 24B" },
+  { value: "openrouter:moonshotai/kimi-dev-72b:free", label: "OpenRouter: MoonshotAI: Kimi Dev 72B" },
+  { value: "openrouter:deepseek/deepseek-r1-0528-qwen3-8b:free", label: "OpenRouter: DeepSeek - Deepseek R1 0528 Qwen3 8B" },
+  { value: "openrouter:deepseek/deepseek-r1-0528:free", label: "OpenRouter: DeepSeek - R1 0528" },
+  { value: "openrouter:microsoft/mai-ds-r1:free", label: "OpenRouter: Microsoft: MAI DS R1" },
+  { value: "openrouter:meta-llama/llama-3.3-70b-instruct:free", label: "OpenRouter: Meta - Llama 3.3 70B Instruct" },
+  { value: "groq:openai/gpt-oss-120b", label: "Groq: GPT-OSS 120B" },
+  { value: "groq:meta-llama/llama-4-scout-17b-16e-instruct", label: "Groq: Llama 4 Scout" },
+  { value: "groq:qwen/qwen3-32b", label: "Groq: Qwen 3 32B" },
+
 ];
 
 function classNames(...xs) {
@@ -87,6 +92,7 @@ function Bubble({ role, content }) {
 
 export default function App() {
   const apiBase = process.env.REACT_APP_API_BASE || "/api";
+  const [systemPreview, setSystemPreview] = useState("");
   const [open, setOpen] = useState(false);
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [personas, setPersonas] = useState(DEFAULT_PERSONAS);
@@ -114,6 +120,36 @@ export default function App() {
       setThreads(await res.json());
     } catch (e) {
       console.error(e);
+    }
+  }
+
+  async function continueThread(tid) {
+    try {
+      const tr = await fetch(`${apiBase}/threads/${tid}`).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json(); // {id, persona_id, summary}
+      });
+
+      const msgs = await fetch(`${apiBase}/threads/${tid}/messages`).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json(); // [{id,role,content,created_at}]
+      });
+
+      setPersonaId(tr.persona_id);
+      setModel(tr.model);
+      threadIdRef.current = tid;
+
+
+      setActiveTab("chat");
+
+      const compact = msgs.map(m => ({ role: m.role, content: m.content }));
+      setMessages(compact);
+
+
+      setInput("");
+      setLoading(false);
+    } catch (e) {
+      alert(`Не удалось загрузить тред: ${e.message || e}`);
     }
   }
 
@@ -186,28 +222,20 @@ export default function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const systemPreview = useMemo(() => {
-    if (!activePersona) return "";
-    const goals = (activePersona.goals || []).join(", ");
-    return (
-      `Ты играешь роль: ${activePersona.name}.\n` +
-      `Био: ${activePersona.bio}.\n` +
-      `Стиль: ${activePersona.style}.\n` +
-      `Границы: ${activePersona.boundaries}.\n` +
-      `Цели: ${goals}\n` +
-      `\nГлобальные параметры: .\n\n` +
-      `Коммуникация: пиши как реальный человек в личном чате. \n` +
-      `Короткие живые реплики (1–4 предложения), иногда уточняющий вопрос.\n` +
-      `Запреты: не используй эмодзи, смайлики, ASCII-арт, стикеры и реакции; \n` +
-      `не используй Markdown/списки/таблицы без явной просьбы;\n` +
-      `не ставь кавычки вокруг своих фраз без необходимости.\n` +
-      `Тон: естественный, дружелюбный, без искусственной приподнятости и шаблонных фраз.\n` +
-      `Если чего-то не знаешь — скажи кратко и предложи уточнить. Без лишних дисклеймеров.\n` +
-      `Персона: говори от первого лица, сохраняй характер и границы персоны.\n` +
-      `Не раскрывай, что ты ИИ/модель.\n` +
-      `Язык: русский, разговорный.\n`
-    );
-  }, [activePersona]);
+  useEffect(() => {
+    async function fetchPrompt() {
+      if (!personaId || !apiBase) return;
+      try {
+        const res = await fetch(`${apiBase}/personas/${personaId}/system_prompt`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        setSystemPreview(data.prompt || "");
+      } catch (e) {
+        setSystemPreview(`(не удалось загрузить промпт: ${e.message || e})`);
+      }
+    }
+    fetchPrompt();
+  }, [personaId, apiBase]);
 
   useEffect(() => {
     async function fetchPersonas() {
@@ -333,175 +361,109 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-gray-50">
-       <header className="sticky top-0 z-10 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-      <div className="mx-auto max-w-5xl px-3 sm:px-4 py-2 sm:py-3 flex items-center gap-2 sm:gap-10">
+      <header className="sticky top-0 z-10 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <div className="mx-auto max-w-5xl px-3 sm:px-4 py-2 sm:py-3 flex items-center gap-2 sm:gap-10">
 
-        {/* Гамбургер — только мобилка */}
-        <button
-          className="inline-flex items-center justify-center sm:hidden h-9 w-9 rounded-lg border"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-controls="mobile-panel"
-          title="Меню"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-        </button>
-
-        {/* Вкладки — мобилка (горизонтальный скролл) */}
-        <nav className="sm:hidden -mx-1 overflow-x-auto no-scrollbar">
-          <div className="flex gap-2 px-1">
-            {[
-              { id: "chat", label: "Чат" },
-              { id: "history", label: "История" },
-            ].map((t) => (
-              <button
-                key={t.id}
-                className={`px-3 py-1.5 rounded-lg text-sm border whitespace-nowrap ${
-                  activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"
-                }`}
-                onClick={() => setActiveTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </nav>
-
-        {/* Вкладки — десктоп (как было, только колонкой слева) */}
-        <nav className="hidden sm:flex flex-col gap-1">
+          {/* Гамбургер — только мобилка */}
           <button
-            className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "chat" ? "bg-gray-900 text-white" : "bg-white"}`}
-            onClick={() => setActiveTab("chat")}
+            className="inline-flex items-center justify-center sm:hidden h-9 w-9 rounded-lg border"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls="mobile-panel"
+            title="Меню"
           >
-            Чат
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
           </button>
-          <button
-            className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "history" ? "bg-gray-900 text-white" : "bg-white"}`}
-            onClick={() => setActiveTab("history")}
-          >
-            История
-          </button>
-        </nav>
 
-        {/* Панель настроек — десктоп */}
-        <div className="ml-auto hidden sm:flex flex-wrap items-center justify-center gap-2">
-          {/* Выбор модели */}
-          <select
-            className="rounded-xl border px-3 py-2 text-sm"
-            value={model}
-            onChange={(e) => startNewThread({ modelValue: e.target.value })}
-            title="LLM модель"
-          >
-            {MODEL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          {/* Вкладки — мобилка (горизонтальный скролл) */}
+          <nav className="sm:hidden -mx-1 overflow-x-auto no-scrollbar">
+            <div className="flex gap-2 px-1">
+              {[
+                { id: "chat", label: "Чат" },
+                { id: "history", label: "История" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  className={`px-3 py-1.5 rounded-lg text-sm border whitespace-nowrap ${activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"
+                    }`}
+                  onClick={() => setActiveTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </nav>
 
-          {/* Выбор персоны */}
-          <select
-            className="rounded-xl border px-3 py-2 text-sm"
-            value={personaId}
-            onChange={(e) => startNewThread({ persona: e.target.value })}
-            title="Персона"
-          >
-            {Object.values(personas).map((p) => (
-              <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-            ))}
-          </select>
+          {/* Вкладки — десктоп (как было, только колонкой слева) */}
+          <nav className="hidden sm:flex flex-col gap-1">
+            <button
+              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "chat" ? "bg-gray-900 text-white" : "bg-white"}`}
+              onClick={() => setActiveTab("chat")}
+            >
+              Чат
+            </button>
+            <button
+              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "history" ? "bg-gray-900 text-white" : "bg-white"}`}
+              onClick={() => setActiveTab("history")}
+            >
+              История
+            </button>
+          </nav>
 
-          {/* Temperature */}
-          <div className="flex items-center gap-2 text-sm px-2 py-1 rounded-xl border bg-white">
-            <span className="text-gray-600">Temp:</span>
-            <input
-              type="range"
-              min={0}
-              max={2}
-              step={0.1}
-              value={temperature}
-              onChange={(e) => setTemperature(parseFloat(e.target.value))}
-            />
-            <span className="w-8 text-right tabular-nums">{temperature.toFixed(1)}</span>
-          </div>
-        </div>
-
-        {/* Кнопки справа — десктоп */}
-        <div className="hidden sm:flex flex-col gap-1">
-          <button
-            className="px-3 py-1 rounded-lg text-sm border bg-gray-900 text-white"
-            onClick={() => startNewThread()}
-            title="Начать новый диалог (новый тред)"
-          >
-            Новый диалог
-          </button>
-          <button
-            className={`px-3 py-1 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
-            onClick={() => setEditingPersona((v) => !v)}
-            title="Редактировать персону"
-          >
-            {editingPersona ? "Скрыть персону" : "Редактировать персону"}
-          </button>
-        </div>
-      </div>
-
-      {/* Выпадающая панель — мобилка */}
-      <div
-        id="mobile-panel"
-        className={`sm:hidden border-t overflow-hidden transition-[max-height] duration-300 ${open ? "max-h-[420px]" : "max-h-0"}`}
-      >
-        <div className="px-3 py-3 grid grid-cols-1 gap-3">
-          <div className="grid grid-cols-1 gap-2">
-            <label className="text-xs text-gray-600">LLM модель</label>
+          {/* Панель настроек — десктоп */}
+          <div className="ml-auto hidden sm:flex flex-wrap items-center justify-center gap-2">
+            {/* Выбор модели */}
             <select
               className="rounded-xl border px-3 py-2 text-sm"
               value={model}
-              onChange={(e) => { setOpen(false); startNewThread({ modelValue: e.target.value }); }}
+              onChange={(e) => startNewThread({ modelValue: e.target.value })}
               title="LLM модель"
             >
               {MODEL_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-          </div>
 
-          <div className="grid grid-cols-1 gap-2">
-            <label className="text-xs text-gray-600">Персона</label>
+            {/* Выбор персоны */}
             <select
               className="rounded-xl border px-3 py-2 text-sm"
               value={personaId}
-              onChange={(e) => { setOpen(false); startNewThread({ persona: e.target.value }); }}
+              onChange={(e) => startNewThread({ persona: e.target.value })}
               title="Персона"
             >
               {Object.values(personas).map((p) => (
                 <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
               ))}
             </select>
+
+            {/* Temperature */}
+            <div className="flex items-center gap-2 text-sm px-2 py-1 rounded-xl border bg-white">
+              <span className="text-gray-600">Temp:</span>
+              <input
+                type="range"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperature}
+                onChange={(e) => setTemperature(parseFloat(e.target.value))}
+              />
+              <span className="w-8 text-right tabular-nums">{temperature.toFixed(1)}</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-[auto,1fr,auto] items-center gap-2 rounded-xl border bg-white px-3 py-2">
-            <span className="text-sm text-gray-600">Temp</span>
-            <input
-              type="range"
-              min={0}
-              max={2}
-              step={0.1}
-              value={temperature}
-              onChange={(e) => setTemperature(parseFloat(e.target.value))}
-            />
-            <span className="text-sm tabular-nums">{temperature.toFixed(1)}</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
+          {/* Кнопки справа — десктоп */}
+          <div className="hidden sm:flex flex-col gap-1">
             <button
-              className="px-3 py-2 rounded-lg text-sm border bg-gray-900 text-white"
-              onClick={() => { setOpen(false); startNewThread(); }}
+              className="px-3 py-1 rounded-lg text-sm border bg-gray-900 text-white"
+              onClick={() => startNewThread()}
               title="Начать новый диалог (новый тред)"
             >
               Новый диалог
             </button>
             <button
-              className={`px-3 py-2 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
+              className={`px-3 py-1 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
               onClick={() => setEditingPersona((v) => !v)}
               title="Редактировать персону"
             >
@@ -509,8 +471,73 @@ export default function App() {
             </button>
           </div>
         </div>
-      </div>
-    </header>
+
+        {/* Выпадающая панель — мобилка */}
+        <div
+          id="mobile-panel"
+          className={`sm:hidden border-t overflow-hidden transition-[max-height] duration-300 ${open ? "max-h-[420px]" : "max-h-0"}`}
+        >
+          <div className="px-3 py-3 grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 gap-2">
+              <label className="text-xs text-gray-600">LLM модель</label>
+              <select
+                className="rounded-xl border px-3 py-2 text-sm"
+                value={model}
+                onChange={(e) => { setOpen(false); startNewThread({ modelValue: e.target.value }); }}
+                title="LLM модель"
+              >
+                {MODEL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <label className="text-xs text-gray-600">Персона</label>
+              <select
+                className="rounded-xl border px-3 py-2 text-sm"
+                value={personaId}
+                onChange={(e) => { setOpen(false); startNewThread({ persona: e.target.value }); }}
+                title="Персона"
+              >
+                {Object.values(personas).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-[auto,1fr,auto] items-center gap-2 rounded-xl border bg-white px-3 py-2">
+              <span className="text-sm text-gray-600">Temp</span>
+              <input
+                type="range"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperature}
+                onChange={(e) => setTemperature(parseFloat(e.target.value))}
+              />
+              <span className="text-sm tabular-nums">{temperature.toFixed(1)}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="px-3 py-2 rounded-lg text-sm border bg-gray-900 text-white"
+                onClick={() => { setOpen(false); startNewThread(); }}
+                title="Начать новый диалог (новый тред)"
+              >
+                Новый диалог
+              </button>
+              <button
+                className={`px-3 py-2 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
+                onClick={() => setEditingPersona((v) => !v)}
+                title="Редактировать персону"
+              >
+                {editingPersona ? "Скрыть персону" : "Редактировать персону"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
 
 
       <main className="mx-auto max-w-5xl px-4 py-4 grid gap-4 md:grid-cols-[2fr_1fr]">
@@ -668,7 +695,12 @@ export default function App() {
                       className={`w-full text-left p-2 rounded border ${selectedThread === t.id ? "bg-gray-100" : "bg-white"}`}
                     >
                       <div className="text-sm font-medium truncate">{t.id}</div>
-                      <div className="text-xs text-gray-500">persona: {t.persona_id}</div>
+                      <div className="text-xs text-gray-500">
+                        persona: {t.persona_id}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        model: {t.model}
+                      </div>
                       {t.summary && <div className="text-xs text-gray-600 line-clamp-2">{t.summary}</div>}
                     </button>
                   ))}
@@ -680,13 +712,22 @@ export default function App() {
                 <div className="p-3 border-b flex items-center justify-between">
                   <div className="font-semibold">Сообщения {selectedThread ? `(${selectedThread})` : ""}</div>
                   {selectedThread && (
-                    <button
-                      className="text-xs px-2 py-1 rounded border text-red-600 hover:bg-red-50"
-                      onClick={() => setDeleteThreadDialog({ open: true, threadId: selectedThread })}
-                      title="Удалить этот диалог целиком"
-                    >
-                      Удалить диалог
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        className="text-xs px-2 py-1 rounded border text-red-600 hover:bg-red-50"
+                        onClick={() => setDeleteThreadDialog({ open: true, threadId: selectedThread })}
+                        title="Удалить этот диалог целиком"
+                      >
+                        Удалить диалог
+                      </button>
+                      <button
+                        className="text-xs border px-2 py-1 rounded hover:bg-gray-50"
+                        onClick={() => continueThread(selectedThread)}
+                        title="Продолжить диалог в чате"
+                      >
+                        Продолжить в чате
+                      </button>
+                    </div>
                   )}
                 </div>
 
