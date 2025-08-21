@@ -549,7 +549,7 @@ export default function App() {
       </header>
 
 
-      <main className="mx-auto max-w-5xl px-4 py-4 grid gap-4 md:grid-cols-[2fr_1fr]">
+      <main className={`mx-auto max-w-5xl px-4 py-4 ${activeTab === "chat" ? "grid gap-4 md:grid-cols-[2fr_1fr]" : ""}`}>
         {activeTab === "chat" ? (
           <>
             {/* =========== CHAT (ваш текущий код) =========== */}
@@ -677,12 +677,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-
-              <div className="pt-2 text-xs text-gray-500">
-                Подсказка: чтобы работать без бэкенда, включите <b>Mock mode</b> (вверху).
-                Для реальных ответов запустите локальный сервер по адресу <code>{apiBase}/chat</code>.
-              </div>
-
             </aside>
           </>
         ) : (
@@ -692,7 +686,7 @@ export default function App() {
               {/* Лист тредов */}
               <div className="w-1/3 border-r h-full overflow-y-auto">
                 <div className="p-3 flex items-center justify-between border-b">
-                  <div className="font-semibold">Диалоги</div>
+                  <div className="font-semibold text-lg">Диалоги</div>
                   <button className="text-xs text-gray-600 border px-2 py-1 rounded" onClick={loadThreads}>Обновить</button>
                 </div>
                 <div className="p-2 space-y-1">
@@ -719,7 +713,7 @@ export default function App() {
               {/* Сообщения треда */}
               <div className="flex-1 h-full flex flex-col">
                 <div className="p-3 border-b flex items-center justify-between">
-                  <div className="font-semibold">Сообщения {selectedThread ? `(${selectedThread})` : ""}</div>
+                  <div className="font-semibold text-lg">Сообщения {selectedThread ? `(${selectedThread})` : ""}</div>
                   {selectedThread && (
                     <div className="flex gap-2">
                       <button
@@ -771,18 +765,6 @@ export default function App() {
                 )}
               </div>
             </section>
-
-            <aside className="rounded-2xl border bg-white shadow-sm p-4 h-[78vh] overflow-y-auto">
-              <div className="text-sm text-gray-600">Подсказка</div>
-              <p className="text-sm text-gray-700">
-                Здесь можно просматривать и редактировать контекст (summary), а также удалять отдельные сообщения. После изменений — обновите список диалогов.
-              </p>
-              <hr className="my-3" />
-              <div className="text-xs text-gray-500">
-                API: <code>GET /api/threads</code>, <code>GET /api/threads/:id/messages</code>,
-                <code> PATCH /api/threads/:id</code>, <code>DELETE /api/messages/:id</code>
-              </div>
-            </aside>
           </>
         )}
       </main>
