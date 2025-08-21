@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 
 // This single-file React app provides a local web UI to test multiple personas
@@ -210,6 +210,18 @@ export default function App() {
     }
   }
 
+  const fetchSystemPrompt = useCallback(async (pid = personaId) => {
+  if (!pid || !apiBase) return;
+  try {
+    const res = await fetch(`${apiBase}/personas/${pid}/system_prompt`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    setSystemPreview(data.prompt || "");
+  } catch (e) {
+    setSystemPreview(`(не удалось загрузить промпт: ${e.message || e})`);
+  }
+}, [apiBase, personaId]);
+
   useEffect(() => { saveSetting("chat_model", model); }, [model]);
   useEffect(() => { saveSetting("chat_personaId", personaId); }, [personaId]);
   useEffect(() => { saveSetting("chat_temperature", temperature); }, [temperature]);
@@ -226,19 +238,9 @@ export default function App() {
   }, [messages, loading]);
 
   useEffect(() => {
-    async function fetchPrompt() {
-      if (!personaId || !apiBase) return;
-      try {
-        const res = await fetch(`${apiBase}/personas/${personaId}/system_prompt`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        setSystemPreview(data.prompt || "");
-      } catch (e) {
-        setSystemPreview(`(не удалось загрузить промпт: ${e.message || e})`);
-      }
-    }
-    fetchPrompt();
-  }, [personaId, apiBase]);
+  fetchSystemPrompt(personaId);
+}, [personaId, apiBase, fetchSystemPrompt]);
+
 
   useEffect(() => {
     async function fetchPersonas() {
@@ -284,6 +286,7 @@ export default function App() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await fetchSystemPrompt(personaId);
       // Можно перечитать с сервера, чтобы убедиться
       // const updated = await res.json();
     } catch (e) {
