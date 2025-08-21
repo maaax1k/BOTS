@@ -94,14 +94,14 @@ export default function App() {
   const apiBase = process.env.REACT_APP_API_BASE || "/api";
   const [systemPreview, setSystemPreview] = useState("");
   const [open, setOpen] = useState(false);
-  const [model, setModel] = useState(MODEL_OPTIONS[0].value);
+  const [model, setModel] = useState(() => loadSetting("chat_model", MODEL_OPTIONS[0].value));
   const [personas, setPersonas] = useState(DEFAULT_PERSONAS);
-  const [personaId, setPersonaId] = useState("friendly");
+  const [personaId, setPersonaId] = useState(() => loadSetting("chat_personaId", "friendly"));
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]); // {role:"user"|"assistant", content:string}
   const [loading, setLoading] = useState(false);
-  const [mockMode, setMockMode] = useState(false);
-  const [temperature, setTemperature] = useState(0.7);
+  const [temperature, setTemperature] = useState(() => loadSetting("chat_temperature", 0.7));
+
   const [editingPersona, setEditingPersona] = useState(false);
   const threadIdRef = useRef(uuidv4());
   const endRef = useRef(null);
@@ -210,6 +210,9 @@ export default function App() {
     }
   }
 
+  useEffect(() => { saveSetting("chat_model", model); }, [model]);
+  useEffect(() => { saveSetting("chat_personaId", personaId); }, [personaId]);
+  useEffect(() => { saveSetting("chat_temperature", temperature); }, [temperature]);
 
   useEffect(() => {
     if (activeTab === "history") loadThreads();
@@ -303,6 +306,18 @@ export default function App() {
     if (typeof modelValue === "string" && modelValue !== model) setModel(modelValue);
   }
 
+  function loadSetting(key, def) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw !== null ? JSON.parse(raw) : def;
+    } catch {
+      return def;
+    }
+  }
+  function saveSetting(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch { }
+  }
+
 
   async function sendMessage() {
     const text = input.trim();
@@ -313,27 +328,21 @@ export default function App() {
     setLoading(true);
     try {
       let replyText = "";
-      if (mockMode) {
-        // Simple mock response that mirrors tone by persona
-        const tone = personaId === "romantic" ? "✨" : personaId === "friendly" ? "😊" : "";
-        replyText = `${tone} (${model.split(":")[0]}/${activePersona.name}) Я услышала: “${text}”. Расскажи ещё!`;
-        await new Promise((r) => setTimeout(r, 400));
-      } else {
-        const res = await fetch(`${apiBase}/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model,
-            personaId,
-            message: text,
-            threadId: threadIdRef.current,
-            temperature,
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        replyText = data.text || "(пустой ответ)";
-      }
+
+      const res = await fetch(`${apiBase}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          personaId,
+          message: text,
+          threadId: threadIdRef.current,
+          temperature,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      replyText = data.text || "(пустой ответ)";
       setMessages((m) => [...m, { role: "assistant", content: replyText }]);
     } catch (e) {
       setMessages((m) => [
