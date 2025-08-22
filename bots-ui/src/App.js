@@ -124,14 +124,14 @@ export default function App() {
   const [agentA, setAgentA] = useState(() => loadSetting("agentA", {
     name: "Аня",
     personaId: "friendly",
-    model: "gemini:gemini-1.5-flash",
+    model: "gemini:gemini-2.5-flash",
     temperature: 0.7,
     threadId: uuidv4(),
   }));
   const [agentB, setAgentB] = useState(() => loadSetting("agentB", {
     name: "Иван",
     personaId: "neutral",
-    model: "openrouter:qwen/qwen-2.5-7b-instruct",
+    model: "gemini:gemini-2.5-flash",
     temperature: 0.7,
     threadId: uuidv4(),
   }));
@@ -519,75 +519,69 @@ export default function App() {
     setBotsRunning(false);
   }
 
-
-
-
-
   return (
-    <div className="min-h-screen w-full bg-gray-50">
-      <header className="sticky top-0 z-10 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50 flex flex-col">
+      {/* ================= HEADER ================= */}
+      <header className="sticky top-0 z-20 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div className="mx-auto max-w-5xl px-3 sm:px-4 py-2 sm:py-3 flex items-center gap-2 sm:gap-10">
-
-          {/* Гамбургер — только мобилка */}
+          {/* Hamburger (mobile only) */}
           <button
-            className="inline-flex items-center justify-center sm:hidden h-9 w-9 rounded-lg border"
+            className="inline-flex items-center justify-center sm:hidden h-10 w-10 rounded-xl border bg-white"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-controls="mobile-panel"
             title="Меню"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
               <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
 
-          {/* Вкладки — мобилка (горизонтальный скролл) */}
-          <nav className="sm:hidden -mx-1 overflow-x-auto no-scrollbar">
+          {/* Tabs – mobile (horizontal scroll) */}
+          <nav className="sm:hidden -mx-1 overflow-x-auto no-scrollbar flex-1">
             <div className="flex gap-2 px-1">
               {[
                 { id: "chat", label: "Чат" },
                 { id: "history", label: "История" },
                 { id: "bots", label: "Боты" },
               ].map((t) => (
-                <button key={t.id}
-                  className={`px-3 py-1.5 rounded-lg text-sm border whitespace-nowrap ${activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"}`}
+                <button
+                  key={t.id}
+                  className={`px-3 py-1.5 rounded-xl text-sm border whitespace-nowrap ${
+                    activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"
+                  }`}
                   onClick={() => setActiveTab(t.id)}
                 >
                   {t.label}
                 </button>
               ))}
-
             </div>
           </nav>
 
-          {/* Вкладки — десктоп (как было, только колонкой слева) */}
+          {/* Tabs – desktop (column) */}
           <nav className="hidden sm:flex flex-col gap-1">
-            <button
-              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "chat" ? "bg-gray-900 text-white" : "bg-white"}`}
-              onClick={() => setActiveTab("chat")}
-            >
-              Чат
-            </button>
-            <button
-              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "history" ? "bg-gray-900 text-white" : "bg-white"}`}
-              onClick={() => setActiveTab("history")}
-            >
-              История
-            </button>
-            <button
-              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "bots" ? "bg-gray-900 text-white" : "bg-white"}`}
-              onClick={() => setActiveTab("bots")}
-            >
-              Боты
-            </button>
+            {[
+              { id: "chat", label: "Чат" },
+              { id: "history", label: "История" },
+              { id: "bots", label: "Боты" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                className={`px-3 py-1 rounded-lg text-sm border ${
+                  activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"
+                }`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
           </nav>
 
-
-          {/* Панель настроек — десктоп */}
+          {/* Settings – desktop */}
           <div className="ml-auto hidden sm:flex flex-wrap items-center justify-center gap-2">
-            {/* Выбор модели */}
+            {/* Model */}
             <select
-              className="rounded-xl border px-3 py-2 text-sm"
+              className="rounded-xl border px-3 py-2 text-sm bg-white"
               value={model}
               onChange={(e) => startNewThread({ modelValue: e.target.value })}
               title="LLM модель"
@@ -597,9 +591,9 @@ export default function App() {
               ))}
             </select>
 
-            {/* Выбор персоны */}
+            {/* Persona */}
             <select
-              className="rounded-xl border px-3 py-2 text-sm"
+              className="rounded-xl border px-3 py-2 text-sm bg-white"
               value={personaId}
               onChange={(e) => startNewThread({ persona: e.target.value })}
               title="Персона"
@@ -624,7 +618,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Кнопки справа — десктоп */}
+          {/* Right buttons – desktop */}
           <div className="hidden sm:flex flex-col gap-1">
             <button
               className="px-3 py-1 rounded-lg text-sm border bg-gray-900 text-white"
@@ -643,19 +637,18 @@ export default function App() {
           </div>
         </div>
 
-        {/* Выпадающая панель — мобилка */}
+        {/* Collapsible mobile panel */}
         <div
           id="mobile-panel"
-          className={`sm:hidden border-t overflow-hidden transition-[max-height] duration-300 ${open ? "max-h-[420px]" : "max-h-0"}`}
+          className={`sm:hidden border-t overflow-hidden transition-[max-height] duration-300 ${open ? "max-h-[500px]" : "max-h-0"}`}
         >
           <div className="px-3 py-3 grid grid-cols-1 gap-3">
             <div className="grid grid-cols-1 gap-2">
               <label className="text-xs text-gray-600">LLM модель</label>
               <select
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border px-3 py-2 text-sm bg-white"
                 value={model}
                 onChange={(e) => { setOpen(false); startNewThread({ modelValue: e.target.value }); }}
-                title="LLM модель"
               >
                 {MODEL_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -666,10 +659,9 @@ export default function App() {
             <div className="grid grid-cols-1 gap-2">
               <label className="text-xs text-gray-600">Персона</label>
               <select
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border px-3 py-2 text-sm bg-white"
                 value={personaId}
                 onChange={(e) => { setOpen(false); startNewThread({ persona: e.target.value }); }}
-                title="Персона"
               >
                 {Object.values(personas).map((p) => (
                   <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
@@ -692,16 +684,14 @@ export default function App() {
 
             <div className="grid grid-cols-2 gap-2">
               <button
-                className="px-3 py-2 rounded-lg text-sm border bg-gray-900 text-white"
+                className="px-3 py-2 rounded-xl text-sm border bg-gray-900 text-white"
                 onClick={() => { setOpen(false); startNewThread(); }}
-                title="Начать новый диалог (новый тред)"
               >
                 Новый диалог
               </button>
               <button
-                className={`px-3 py-2 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
+                className={`px-3 py-2 rounded-xl text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
                 onClick={() => setEditingPersona((v) => !v)}
-                title="Редактировать персону"
               >
                 {editingPersona ? "Скрыть персону" : "Редактировать персону"}
               </button>
@@ -710,25 +700,25 @@ export default function App() {
         </div>
       </header>
 
-
-      <main
-        className={`mx-auto max-w-5xl px-4 py-4 ${activeTab === "chat" || activeTab === "bots" ? "grid gap-4 md:grid-cols-[2fr_1fr]" : ""
-          }`}
-      >
+      {/* ================= MAIN ================= */}
+      <main className={`mx-auto max-w-5xl px-3 sm:px-4 pt-3 pb-3 sm:pb-4 flex-1 w-full ${
+        activeTab === "chat" || activeTab === "bots" ? "grid gap-3 md:grid-cols-[2fr_1fr]" : ""
+      }`}>
         {activeTab === "chat" ? (
           <>
-            {/* ======== CHAT ======== */}
-            <section className="rounded-2xl border bg-white shadow-sm flex flex-col h-[78vh]">
+            {/* CHAT */}
+            <section className="rounded-2xl border bg-white shadow-sm flex flex-col h-[calc(100dvh-11rem)] sm:h-[78vh]">
               <div className="px-4 py-2 border-b text-sm text-gray-600 flex items-center justify-between">
                 <div>
                   Модель: <b>{model}</b> • Персона: <b>{activePersona?.name}</b>
                 </div>
-                <button className="text-xs text-gray-500 hover:text-gray-800" onClick={() => setMessages([])}>
+                <button className="text-xs text-gray-500 hover:text-gray-800" onClick={() => window?.setMessages?.([])}>
                   Очистить
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-white to-gray-50">
+              {/* Messages list */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-white to-gray-50 will-change-transform">
                 {messages.length === 0 && (
                   <div className="text-center text-gray-500 text-sm mt-10">
                     Напишите сообщение, чтобы начать диалог. Вы можете менять модель и персону на лету.
@@ -745,9 +735,10 @@ export default function App() {
                 <div ref={endRef} />
               </div>
 
-              <div className="border-t p-3 flex gap-2">
+              {/* Sticky composer on mobile */}
+              <div className="border-t p-2 sm:p-3 flex gap-2 sticky bottom-0 bg-white/95 rounded-br-2xl rounded-bl-2xl backdrop-blur supports-[backdrop-filter]:bg-white/80">
                 <textarea
-                  className="flex-1 resize-none rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="flex-1 min-h-[44px] max-h-40 resize-none rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
                   rows={2}
                   placeholder="Напишите сообщение и нажмите Enter"
                   value={input}
@@ -755,17 +746,17 @@ export default function App() {
                   onKeyDown={handleKey}
                 />
                 <button
-                  className="rounded-2xl bg-blue-600 text-white px-5 py-2 shadow hover:bg-blue-700 disabled:bg-blue-300"
+                  className="rounded-2xl bg-blue-600 text-white px-5 py-2 shadow hover:bg-blue-700 disabled:bg-blue-300 active:scale-[.99]"
                   onClick={sendMessage}
-                  disabled={loading || !input.trim()}
+                  disabled={loading || !input?.trim?.()}
                 >
                   Отправить
                 </button>
               </div>
             </section>
 
-            {/* Правая панель: Персона */}
-            <aside className="rounded-2xl border bg-white shadow-sm p-4 space-y-3 h-[78vh] overflow-y-auto">
+            {/* Persona sidebar (moves under on mobile) */}
+            <aside className="rounded-2xl border bg-white shadow-sm p-4 space-y-3 h-[calc(60dvh)] sm:h-[78vh] overflow-y-auto order-last md:order-none">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Персона</h2>
                 <span className="text-xs text-gray-500">{personaId}</span>
@@ -842,7 +833,7 @@ export default function App() {
                   </label>
                   <div className="flex justify-end pt-1">
                     <button
-                      className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow-md hover:bg-blue-700 hover:shadow-lg active:bg-blue-800 transition duration-200"
+                      className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow-md hover:bg-blue-700 active:bg-blue-800"
                       onClick={savePersonaToServer}
                     >
                       Сохранить персону
@@ -854,11 +845,11 @@ export default function App() {
           </>
         ) : activeTab === "history" ? (
           <>
-            {/* ======== HISTORY ======== */}
-            <section className="rounded-2xl border bg-white shadow-sm p-0 h-[78vh] flex">
-              {/* Список тредов */}
-              <div className="w-1/3 border-r h-full overflow-y-auto">
-                <div className="p-3 flex items-center justify-between border-b">
+            {/* HISTORY */}
+            <section className="rounded-2xl border bg-white shadow-sm p-0 h-[calc(100dvh-11rem)] sm:h-[78vh] flex">
+              {/* Threads list */}
+              <div className="w-1/2 sm:w-1/3 border-r h-full overflow-y-auto">
+                <div className="p-3 flex items-center justify-between border-b sticky top-0 bg-white/95 backdrop-blur">
                   <div className="font-semibold text-lg">Диалоги</div>
                   <button className="text-xs text-gray-600 border px-2 py-1 rounded" onClick={loadThreads}>
                     Обновить
@@ -874,8 +865,7 @@ export default function App() {
                         setSummaryDraft(t.summary || "");
                         loadMessages(t.id);
                       }}
-                      className={`w-full text-left p-2 rounded border ${selectedThread === t.id ? "bg-gray-100" : "bg-white"
-                        }`}
+                      className={`w-full text-left p-2 rounded border ${selectedThread === t.id ? "bg-gray-100" : "bg-white"}`}
                     >
                       <div className="text-sm font-medium truncate">{t.id}</div>
                       <div className="text-xs text-gray-500">persona: {t.persona_id}</div>
@@ -886,9 +876,9 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Сообщения треда */}
+              {/* Thread messages */}
               <div className="flex-1 h-full flex flex-col">
-                <div className="p-3 border-b flex items-center justify-between">
+                <div className="p-3 border-b flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur">
                   <div className="font-semibold text-lg">
                     Сообщения {selectedThread ? `(${selectedThread})` : ""}
                   </div>
@@ -904,7 +894,7 @@ export default function App() {
                       <button
                         className="text-xs border px-2 py-1 rounded hover:bg-gray-50"
                         onClick={() => continueThread(selectedThread)}
-                        title="Продолжить диalog в чате"
+                        title="Продолжить диалог в чате"
                       >
                         Продолжить в чате
                       </button>
@@ -933,7 +923,7 @@ export default function App() {
                 </div>
 
                 {selectedThread && (
-                  <div className="border-t p-3 space-y-2">
+                  <div className="border-t p-3 space-y-2 sticky bottom-0 bg-white/95 backdrop-blur">
                     <div className="text-xs text-gray-600">Summary для контекста</div>
                     <textarea
                       className="w-full border rounded-xl p-2"
@@ -956,12 +946,11 @@ export default function App() {
           </>
         ) : (
           <>
-            {/* ======== BOTS ======== */}
-            {/* Левая колонка — настройки двух агентов и сессии */}
+            {/* BOTS */}
             <section className="rounded-2xl border bg-white shadow-sm p-4 space-y-4">
               <div className="text-lg font-semibold">Диалог ботов</div>
 
-              {/* Агент A */}
+              {/* Agent A */}
               <div className="border rounded-xl p-3">
                 <div className="font-medium mb-2">Бот A</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1019,7 +1008,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Агент B */}
+              {/* Agent B */}
               <div className="border rounded-xl p-3">
                 <div className="font-medium mb-2">Бот B</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1077,7 +1066,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Параметры сессии */}
+              {/* Session params */}
               <div className="border rounded-xl p-3 grid grid-cols-1 md:grid-cols-3 gap-2">
                 <label className="text-sm">
                   Стартовая реплика (от A)
@@ -1109,11 +1098,10 @@ export default function App() {
                 </label>
               </div>
 
-              {/* Кнопки управления */}
+              {/* Controls */}
               <div className="flex gap-2">
                 <button
-                  className={`px-4 py-2 rounded-xl border ${botsRunning ? "bg-gray-200 text-gray-500" : "bg-gray-900 text-white"
-                    }`}
+                  className={`px-4 py-2 rounded-xl border ${botsRunning ? "bg-gray-200 text-gray-500" : "bg-gray-900 text-white"}`}
                   onClick={startBots}
                   disabled={botsRunning}
                 >
@@ -1130,11 +1118,8 @@ export default function App() {
               <div className="text-xs text-gray-500">Ходы: {botsTurns} / {maxExchanges}</div>
             </section>
 
-            {/* Правая колонка — лента диалога ботов */}
-            <aside
-              className="rounded-2xl border bg-white shadow-sm p-4 h-[78vh] overflow-y-auto"
-              ref={botsListRef}
-            >
+            {/* Bot transcript */}
+            <aside className="rounded-2xl border bg-white shadow-sm p-4 h-[calc(60dvh)] sm:h-[78vh] overflow-y-auto" ref={botsListRef}>
               <div className="font-medium mb-3">Лента</div>
               {botsTranscript.length === 0 && (
                 <div className="text-sm text-gray-500">Нажмите «Запустить», чтобы начать диалог ботов.</div>
@@ -1143,8 +1128,7 @@ export default function App() {
                 {botsTranscript.map((m, i) => (
                   <div
                     key={i}
-                    className={`rounded-xl p-3 border ${m.from === "A" ? "bg-blue-50" : m.from === "B" ? "bg-emerald-50" : "bg-yellow-50"
-                      }`}
+                    className={`rounded-xl p-3 border ${m.from === "A" ? "bg-blue-50" : m.from === "B" ? "bg-emerald-50" : "bg-yellow-50"}`}
                   >
                     <div className="text-xs text-gray-600 mb-1">
                       {m.from === "A" ? agentA.name || "Бот A" : m.from === "B" ? agentB.name || "Бот B" : "Система"}
@@ -1154,67 +1138,34 @@ export default function App() {
                 ))}
               </div>
             </aside>
-
           </>
         )}
       </main>
 
-      {/* Delete modal */}
-      {deleteDialog.open && (
+      {/* ================= MODALS ================= */}
+      {deleteDialog?.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* затемнение фона */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setDeleteDialog({ open: false, msgId: null })}
-          />
-          {/* карточка */}
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteDialog({ open: false, msgId: null })} />
           <div className="relative z-10 w-[92%] max-w-sm rounded-2xl border bg-white p-4 shadow">
             <div className="text-lg font-semibold">Удалить сообщение?</div>
-            <div className="mt-1 text-sm text-gray-600">
-              Это действие нельзя отменить.
-            </div>
+            <div className="mt-1 text-sm text-gray-600">Это действие нельзя отменить.</div>
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
-                onClick={() => setDeleteDialog({ open: false, msgId: null })}
-              >
-                Отмена
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700"
-                onClick={() => performDelete(deleteDialog.msgId)}
-              >
-                Удалить
-              </button>
+              <button className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50" onClick={() => setDeleteDialog({ open: false, msgId: null })}>Отмена</button>
+              <button className="px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700" onClick={() => performDelete(deleteDialog.msgId)}>Удалить</button>
             </div>
           </div>
         </div>
       )}
-      {/* Delete Thread modal */}
-      {deleteThreadDialog.open && (
+
+      {deleteThreadDialog?.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setDeleteThreadDialog({ open: false, threadId: null })}
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteThreadDialog({ open: false, threadId: null })} />
           <div className="relative z-10 w-[92%] max-w-sm rounded-2xl border bg-white p-4 shadow">
             <div className="text-lg font-semibold">Удалить диалог?</div>
-            <div className="mt-1 text-sm text-gray-600">
-              Будут удалены все сообщения этого диалога.
-            </div>
+            <div className="mt-1 text-sm text-gray-600">Будут удалены все сообщения этого диалога.</div>
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
-                onClick={() => setDeleteThreadDialog({ open: false, threadId: null })}
-              >
-                Отмена
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700"
-                onClick={() => performThreadDelete(deleteThreadDialog.threadId)}
-              >
-                Удалить
-              </button>
+              <button className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50" onClick={() => setDeleteThreadDialog({ open: false, threadId: null })}>Отмена</button>
+              <button className="px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700" onClick={() => performThreadDelete(deleteThreadDialog.threadId)}>Удалить</button>
             </div>
           </div>
         </div>
@@ -1222,3 +1173,4 @@ export default function App() {
     </div>
   );
 }
+
