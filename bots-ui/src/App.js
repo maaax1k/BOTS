@@ -101,10 +101,18 @@ export default function App() {
   const [messages, setMessages] = useState([]); // {role:"user"|"assistant", content:string}
   const [loading, setLoading] = useState(false);
   const [temperature, setTemperature] = useState(() => loadSetting("chat_temperature", 0.7));
+  const [botsRunning, setBotsRunning] = useState(false);
+  const [botsTranscript, setBotsTranscript] = useState([]); // [{from:"A"|"B", text:string}]
+  const [botsLast, setBotsLast] = useState(""); // последняя реплика (для передачи другому)
+  const [botsTurns, setBotsTurns] = useState(0);
 
   const [editingPersona, setEditingPersona] = useState(false);
   const threadIdRef = useRef(uuidv4());
   const endRef = useRef(null);
+  const botsRunningRef = useRef(false);
+  const botsListRef = useRef(null);
+
+
 
   // --- Admin: threads/messages ---
   const [activeTab, setActiveTab] = useState("chat"); // "chat" | "history"
@@ -112,6 +120,21 @@ export default function App() {
   const [selectedThread, setSelectedThread] = useState(null); // threadId
   const [threadMessages, setThreadMessages] = useState([]); // [{id, role, content, created_at}]
   const [summaryDraft, setSummaryDraft] = useState("");
+
+  const [agentA, setAgentA] = useState(() => loadSetting("agentA", {
+    name: "Аня",
+    personaId: "friendly",
+    model: "gemini:gemini-1.5-flash",
+    temperature: 0.7,
+    threadId: uuidv4(),
+  }));
+  const [agentB, setAgentB] = useState(() => loadSetting("agentB", {
+    name: "Иван",
+    personaId: "neutral",
+    model: "openrouter:qwen/qwen-2.5-7b-instruct",
+    temperature: 0.7,
+    threadId: uuidv4(),
+  }));
 
   async function loadThreads() {
     try {
@@ -211,16 +234,16 @@ export default function App() {
   }
 
   const fetchSystemPrompt = useCallback(async (pid = personaId) => {
-  if (!pid || !apiBase) return;
-  try {
-    const res = await fetch(`${apiBase}/personas/${pid}/system_prompt`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    setSystemPreview(data.prompt || "");
-  } catch (e) {
-    setSystemPreview(`(не удалось загрузить промпт: ${e.message || e})`);
-  }
-}, [apiBase, personaId]);
+    if (!pid || !apiBase) return;
+    try {
+      const res = await fetch(`${apiBase}/personas/${pid}/system_prompt`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setSystemPreview(data.prompt || "");
+    } catch (e) {
+      setSystemPreview(`(не удалось загрузить промпт: ${e.message || e})`);
+    }
+  }, [apiBase, personaId]);
 
   useEffect(() => { saveSetting("chat_model", model); }, [model]);
   useEffect(() => { saveSetting("chat_personaId", personaId); }, [personaId]);
@@ -238,8 +261,19 @@ export default function App() {
   }, [messages, loading]);
 
   useEffect(() => {
-  fetchSystemPrompt(personaId);
-}, [personaId, apiBase, fetchSystemPrompt]);
+    fetchSystemPrompt(personaId);
+  }, [personaId, apiBase, fetchSystemPrompt]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!botsListRef.current) return;
+      const el = botsListRef.current;
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [botsTranscript]);
+
+
 
 
   useEffect(() => {
@@ -269,6 +303,16 @@ export default function App() {
     }
     fetchPersonas();
   }, [apiBase]);
+  useEffect(() => saveSetting("agentA", agentA), [agentA]);
+  useEffect(() => saveSetting("agentB", agentB), [agentB]);
+
+  const [seedText, setSeedText] = useState(() => loadSetting("bots_seed", "Привет! Давай пообщаемся."));
+  const [maxExchanges, setMaxExchanges] = useState(() => loadSetting("bots_max", 8));
+  const [delayMs, setDelayMs] = useState(() => loadSetting("bots_delay", 600));
+
+  useEffect(() => saveSetting("bots_seed", seedText), [seedText]);
+  useEffect(() => saveSetting("bots_max", maxExchanges), [maxExchanges]);
+  useEffect(() => saveSetting("bots_delay", delayMs), [delayMs]);
 
   async function savePersonaToServer() {
     const p = personas[personaId];
@@ -371,6 +415,114 @@ export default function App() {
     }));
   }
 
+  function resetBotsSession() {
+    setBotsTranscript([]);
+    setBotsLast("");
+    setBotsTurns(0);
+  }
+
+
+  async function callBot(agent, text) {
+    const body = {
+      model: agent.model,
+      personaId: agent.personaId,
+      message: text,
+      threadId: agent.threadId,      // важен локальный threadId
+      temperature: agent.temperature,
+    };
+    const res = await fetch(`${apiBase}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return (data.text || "").trim();
+  }
+
+
+  function appendTranscript(from, text) {
+    setBotsTranscript(t => [...t, { from, text }]);
+  }
+
+  async function startBots() {
+    if (botsRunningRef.current) return;
+
+    // локальные снимки конфигов + новые threadId для этой сессии
+    const aLocal = { ...agentA, threadId: uuidv4() };
+    const bLocal = { ...agentB, threadId: uuidv4() };
+
+    // синхронизируем в UI (асинхронно, цикл использует локальные aLocal/bLocal)
+    setAgentA(a => ({ ...a, threadId: aLocal.threadId }));
+    setAgentB(b => ({ ...b, threadId: bLocal.threadId }));
+
+    resetBotsSession();
+
+    botsRunningRef.current = true;
+    setBotsRunning(true);
+
+    let last = (seedText && seedText.trim()) || "Привет! Давай пообщаемся.";
+    let turns = 1;       // локальный счётчик
+    let current = "A";   // последним говорил A → теперь отвечает B
+
+    // первая запись — реплика A
+    setBotsTranscript([{ from: "A", text: last }]);
+    setBotsLast(last);
+    setBotsTurns(turns);
+
+    try {
+      while (botsRunningRef.current && turns < Number(maxExchanges)) {
+        // кто отвечает на предыдущую реплику
+        const speaker = current === "A" ? bLocal : aLocal;
+        const fromTag = current === "A" ? "B" : "A";
+
+        const half = Math.max(0, Number(delayMs)) / 2;
+
+        // пол-задержки перед запросом
+        if (half > 0) {
+          await new Promise(r => setTimeout(r, half));
+        }
+        if (!botsRunningRef.current) break;
+
+        // отправляем «last» как вход другому агенту
+        const reply = await callBot(speaker, last);
+        if (!botsRunningRef.current) break;
+
+        // пол-задержки перед отрисовкой ответа
+        if (half > 0) {
+          await new Promise(r => setTimeout(r, half));
+        }
+        if (!botsRunningRef.current) break;
+
+        // фиксируем ответ
+        setBotsTranscript(t => [...t, { from: fromTag, text: reply }]);
+        last = reply;
+        setBotsLast(last);
+
+        // обновляем ход и сторону
+        turns += 1;
+        setBotsTurns(turns);
+        current = fromTag;
+      }
+
+    } catch (e) {
+      setBotsTranscript(t => [...t, { from: "SYS", text: `Ошибка: ${(e && e.message) || e}` }]);
+    } finally {
+      botsRunningRef.current = false;
+      setBotsRunning(false);
+    }
+  }
+
+
+  function stopBots() {
+    botsRunningRef.current = false;
+    setBotsRunning(false);
+  }
+
+
+
+
+
   return (
     <div className="min-h-screen w-full bg-gray-50">
       <header className="sticky top-0 z-10 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -395,16 +547,16 @@ export default function App() {
               {[
                 { id: "chat", label: "Чат" },
                 { id: "history", label: "История" },
+                { id: "bots", label: "Боты" },
               ].map((t) => (
-                <button
-                  key={t.id}
-                  className={`px-3 py-1.5 rounded-lg text-sm border whitespace-nowrap ${activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"
-                    }`}
+                <button key={t.id}
+                  className={`px-3 py-1.5 rounded-lg text-sm border whitespace-nowrap ${activeTab === t.id ? "bg-gray-900 text-white" : "bg-white"}`}
                   onClick={() => setActiveTab(t.id)}
                 >
                   {t.label}
                 </button>
               ))}
+
             </div>
           </nav>
 
@@ -422,7 +574,14 @@ export default function App() {
             >
               История
             </button>
+            <button
+              className={`px-3 py-1 rounded-lg text-sm border ${activeTab === "bots" ? "bg-gray-900 text-white" : "bg-white"}`}
+              onClick={() => setActiveTab("bots")}
+            >
+              Боты
+            </button>
           </nav>
+
 
           {/* Панель настроек — десктоп */}
           <div className="ml-auto hidden sm:flex flex-wrap items-center justify-center gap-2">
@@ -469,14 +628,14 @@ export default function App() {
           <div className="hidden sm:flex flex-col gap-1">
             <button
               className="px-3 py-1 rounded-lg text-sm border bg-gray-900 text-white"
-              onClick={() => startNewThread()}
+              onClick={() => { startNewThread(); setActiveTab("chat"); }}
               title="Начать новый диалог (новый тред)"
             >
               Новый диалог
             </button>
             <button
               className={`px-3 py-1 rounded-lg text-sm border ${editingPersona ? "bg-gray-900 text-white" : "bg-white"}`}
-              onClick={() => setEditingPersona((v) => !v)}
+              onClick={() => { setEditingPersona((v) => !v); setActiveTab("chat"); }}
               title="Редактировать персону"
             >
               {editingPersona ? "Скрыть персону" : "Редактировать персону"}
@@ -552,11 +711,13 @@ export default function App() {
       </header>
 
 
-      <main className={`mx-auto max-w-5xl px-4 py-4 ${activeTab === "chat" ? "grid gap-4 md:grid-cols-[2fr_1fr]" : ""}`}>
+      <main
+        className={`mx-auto max-w-5xl px-4 py-4 ${activeTab === "chat" || activeTab === "bots" ? "grid gap-4 md:grid-cols-[2fr_1fr]" : ""
+          }`}
+      >
         {activeTab === "chat" ? (
           <>
-            {/* =========== CHAT (ваш текущий код) =========== */}
-            {/* ЛЕВАЯ ПАНЕЛЬ: чат */}
+            {/* ======== CHAT ======== */}
             <section className="rounded-2xl border bg-white shadow-sm flex flex-col h-[78vh]">
               <div className="px-4 py-2 border-b text-sm text-gray-600 flex items-center justify-between">
                 <div>
@@ -573,8 +734,14 @@ export default function App() {
                     Напишите сообщение, чтобы начать диалог. Вы можете менять модель и персону на лету.
                   </div>
                 )}
-                {messages.map((m, i) => (<Bubble key={i} role={m.role} content={m.content} />))}
-                {loading && (<div className="flex gap-2 items-center text-gray-500 text-sm"><div className="animate-pulse">ИИ печатает…</div></div>)}
+                {messages.map((m, i) => (
+                  <Bubble key={i} role={m.role} content={m.content} />
+                ))}
+                {loading && (
+                  <div className="flex gap-2 items-center text-gray-500 text-sm">
+                    <div className="animate-pulse">ИИ печатает…</div>
+                  </div>
+                )}
                 <div ref={endRef} />
               </div>
 
@@ -597,7 +764,7 @@ export default function App() {
               </div>
             </section>
 
-            {/* ПРАВАЯ ПАНЕЛЬ: персона (как у вас было) */}
+            {/* Правая панель: Персона */}
             <aside className="rounded-2xl border bg-white shadow-sm p-4 space-y-3 h-[78vh] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Персона</h2>
@@ -665,7 +832,10 @@ export default function App() {
                       onChange={(e) =>
                         updatePersonaField(
                           "goals",
-                          e.target.value.split(",").map((x) => x.trim()).filter(Boolean)
+                          e.target.value
+                            .split(",")
+                            .map((x) => x.trim())
+                            .filter(Boolean)
                         )
                       }
                     />
@@ -682,31 +852,34 @@ export default function App() {
               )}
             </aside>
           </>
-        ) : (
+        ) : activeTab === "history" ? (
           <>
-            {/* =========== HISTORY (админка) =========== */}
+            {/* ======== HISTORY ======== */}
             <section className="rounded-2xl border bg-white shadow-sm p-0 h-[78vh] flex">
-              {/* Лист тредов */}
+              {/* Список тредов */}
               <div className="w-1/3 border-r h-full overflow-y-auto">
                 <div className="p-3 flex items-center justify-between border-b">
                   <div className="font-semibold text-lg">Диалоги</div>
-                  <button className="text-xs text-gray-600 border px-2 py-1 rounded" onClick={loadThreads}>Обновить</button>
+                  <button className="text-xs text-gray-600 border px-2 py-1 rounded" onClick={loadThreads}>
+                    Обновить
+                  </button>
                 </div>
                 <div className="p-2 space-y-1">
                   {threads.length === 0 && <div className="text-xs text-gray-500 p-2">Пока пусто</div>}
                   {threads.map((t) => (
                     <button
                       key={t.id}
-                      onClick={() => { setSelectedThread(t.id); setSummaryDraft(t.summary || ""); loadMessages(t.id); }}
-                      className={`w-full text-left p-2 rounded border ${selectedThread === t.id ? "bg-gray-100" : "bg-white"}`}
+                      onClick={() => {
+                        setSelectedThread(t.id);
+                        setSummaryDraft(t.summary || "");
+                        loadMessages(t.id);
+                      }}
+                      className={`w-full text-left p-2 rounded border ${selectedThread === t.id ? "bg-gray-100" : "bg-white"
+                        }`}
                     >
                       <div className="text-sm font-medium truncate">{t.id}</div>
-                      <div className="text-xs text-gray-500">
-                        persona: {t.persona_id}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        model: {t.model}
-                      </div>
+                      <div className="text-xs text-gray-500">persona: {t.persona_id}</div>
+                      <div className="text-xs text-gray-500">model: {t.model}</div>
                       {t.summary && <div className="text-xs text-gray-600 line-clamp-2">{t.summary}</div>}
                     </button>
                   ))}
@@ -716,7 +889,9 @@ export default function App() {
               {/* Сообщения треда */}
               <div className="flex-1 h-full flex flex-col">
                 <div className="p-3 border-b flex items-center justify-between">
-                  <div className="font-semibold text-lg">Сообщения {selectedThread ? `(${selectedThread})` : ""}</div>
+                  <div className="font-semibold text-lg">
+                    Сообщения {selectedThread ? `(${selectedThread})` : ""}
+                  </div>
                   {selectedThread && (
                     <div className="flex gap-2">
                       <button
@@ -729,7 +904,7 @@ export default function App() {
                       <button
                         className="text-xs border px-2 py-1 rounded hover:bg-gray-50"
                         onClick={() => continueThread(selectedThread)}
-                        title="Продолжить диалог в чате"
+                        title="Продолжить диalog в чате"
                       >
                         Продолжить в чате
                       </button>
@@ -739,38 +914,251 @@ export default function App() {
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                   {!selectedThread && <div className="text-sm text-gray-500">Выберите диалог слева</div>}
-                  {selectedThread && threadMessages.map(m => (
-                    <div key={m.id} className="border rounded-lg p-2">
-                      <div className="text-xs text-gray-500 flex items-center justify-between">
-                        <span>{m.role}</span>
-                        <button
-                          onClick={() => setDeleteDialog({ open: true, msgId: m.id })}
-                          className="text-xs text-red-600"
-                        >
-                          удалить
-                        </button>
-
+                  {selectedThread &&
+                    threadMessages.map((m) => (
+                      <div key={m.id} className="border rounded-lg p-2">
+                        <div className="text-xs text-gray-500 flex items-center justify-between">
+                          <span>{m.role}</span>
+                          <button
+                            onClick={() => setDeleteDialog({ open: true, msgId: m.id })}
+                            className="text-xs text-red-600"
+                          >
+                            удалить
+                          </button>
+                        </div>
+                        <div className="text-sm whitespace-pre-wrap mt-1">{m.content}</div>
+                        <div className="text-[11px] text-gray-400 mt-1">{m.created_at}</div>
                       </div>
-                      <div className="text-sm whitespace-pre-wrap mt-1">{m.content}</div>
-                      <div className="text-[11px] text-gray-400 mt-1">{m.created_at}</div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
 
                 {selectedThread && (
                   <div className="border-t p-3 space-y-2">
                     <div className="text-xs text-gray-600">Summary для контекста</div>
-                    <textarea className="w-full border rounded-xl p-2" rows={3} value={summaryDraft} onChange={e => setSummaryDraft(e.target.value)} />
+                    <textarea
+                      className="w-full border rounded-xl p-2"
+                      rows={3}
+                      value={summaryDraft}
+                      onChange={(e) => setSummaryDraft(e.target.value)}
+                    />
                     <div className="flex justify-end">
-                      <button className="px-3 py-2 rounded border bg-white hover:bg-gray-50" onClick={() => saveSummary(selectedThread)}>Сохранить summary</button>
+                      <button
+                        className="px-3 py-2 rounded border bg-white hover:bg-gray-50"
+                        onClick={() => saveSummary(selectedThread)}
+                      >
+                        Сохранить summary
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
             </section>
           </>
+        ) : (
+          <>
+            {/* ======== BOTS ======== */}
+            {/* Левая колонка — настройки двух агентов и сессии */}
+            <section className="rounded-2xl border bg-white shadow-sm p-4 space-y-4">
+              <div className="text-lg font-semibold">Диалог ботов</div>
+
+              {/* Агент A */}
+              <div className="border rounded-xl p-3">
+                <div className="font-medium mb-2">Бот A</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <label className="text-sm">
+                    Имя
+                    <input
+                      className="w-full border rounded px-2 py-1"
+                      value={agentA.name}
+                      onChange={(e) => setAgentA((a) => ({ ...a, name: e.target.value }))}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Персона
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={agentA.personaId}
+                      onChange={(e) => setAgentA((a) => ({ ...a, personaId: e.target.value }))}
+                    >
+                      {Object.values(personas).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.id})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm md:col-span-2">
+                    Модель
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={agentA.model}
+                      onChange={(e) => setAgentA((a) => ({ ...a, model: e.target.value }))}
+                    >
+                      {MODEL_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm">
+                    Temperature
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="2"
+                      className="w-full border rounded px-2 py-1"
+                      value={agentA.temperature}
+                      onChange={(e) => setAgentA((a) => ({ ...a, temperature: Number(e.target.value) }))}
+                    />
+                  </label>
+                  <div className="text-xs text-gray-500 flex items-end">
+                    тред: {String(agentA.threadId).slice(0, 8)}…
+                  </div>
+                </div>
+              </div>
+
+              {/* Агент B */}
+              <div className="border rounded-xl p-3">
+                <div className="font-medium mb-2">Бот B</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <label className="text-sm">
+                    Имя
+                    <input
+                      className="w-full border rounded px-2 py-1"
+                      value={agentB.name}
+                      onChange={(e) => setAgentB((b) => ({ ...b, name: e.target.value }))}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Персона
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={agentB.personaId}
+                      onChange={(e) => setAgentB((b) => ({ ...b, personaId: e.target.value }))}
+                    >
+                      {Object.values(personas).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.id})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm md:col-span-2">
+                    Модель
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={agentB.model}
+                      onChange={(e) => setAgentB((b) => ({ ...b, model: e.target.value }))}
+                    >
+                      {MODEL_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm">
+                    Temperature
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="2"
+                      className="w-full border rounded px-2 py-1"
+                      value={agentB.temperature}
+                      onChange={(e) => setAgentB((b) => ({ ...b, temperature: Number(e.target.value) }))}
+                    />
+                  </label>
+                  <div className="text-xs text-gray-500 flex items-end">
+                    тред: {String(agentB.threadId).slice(0, 8)}…
+                  </div>
+                </div>
+              </div>
+
+              {/* Параметры сессии */}
+              <div className="border rounded-xl p-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+                <label className="text-sm">
+                  Стартовая реплика (от A)
+                  <input
+                    className="w-full border rounded px-2 py-1"
+                    value={seedText}
+                    onChange={(e) => setSeedText(e.target.value)}
+                  />
+                </label>
+                <label className="text-sm">
+                  Лимит сообщений
+                  <input
+                    type="number"
+                    min="2"
+                    className="w-full border rounded px-2 py-1"
+                    value={maxExchanges}
+                    onChange={(e) => setMaxExchanges(Number(e.target.value) || 2)}
+                  />
+                </label>
+                <label className="text-sm">
+                  Задержка, мс
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full border rounded px-2 py-1"
+                    value={delayMs}
+                    onChange={(e) => setDelayMs(Number(e.target.value) || 0)}
+                  />
+                </label>
+              </div>
+
+              {/* Кнопки управления */}
+              <div className="flex gap-2">
+                <button
+                  className={`px-4 py-2 rounded-xl border ${botsRunning ? "bg-gray-200 text-gray-500" : "bg-gray-900 text-white"
+                    }`}
+                  onClick={startBots}
+                  disabled={botsRunning}
+                >
+                  Запустить
+                </button>
+                <button className="px-4 py-2 rounded-xl border bg-white hover:bg-gray-50" onClick={stopBots}>
+                  Стоп
+                </button>
+                <button className="px-4 py-2 rounded-xl border bg-white hover:bg-gray-50" onClick={resetBotsSession}>
+                  Сброс
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-500">Ходы: {botsTurns} / {maxExchanges}</div>
+            </section>
+
+            {/* Правая колонка — лента диалога ботов */}
+            <aside
+              className="rounded-2xl border bg-white shadow-sm p-4 h-[78vh] overflow-y-auto"
+              ref={botsListRef}
+            >
+              <div className="font-medium mb-3">Лента</div>
+              {botsTranscript.length === 0 && (
+                <div className="text-sm text-gray-500">Нажмите «Запустить», чтобы начать диалог ботов.</div>
+              )}
+              <div className="space-y-2">
+                {botsTranscript.map((m, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-xl p-3 border ${m.from === "A" ? "bg-blue-50" : m.from === "B" ? "bg-emerald-50" : "bg-yellow-50"
+                      }`}
+                  >
+                    <div className="text-xs text-gray-600 mb-1">
+                      {m.from === "A" ? agentA.name || "Бот A" : m.from === "B" ? agentB.name || "Бот B" : "Система"}
+                    </div>
+                    <div className="whitespace-pre-wrap text-sm">{m.text}</div>
+                  </div>
+                ))}
+              </div>
+            </aside>
+
+          </>
         )}
       </main>
+
       {/* Delete modal */}
       {deleteDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
