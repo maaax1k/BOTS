@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from db import session_scope
 from models import Persona, Thread
 import re
+import asyncio
 
 from db import session_scope
 from models import Persona, Thread, Message
@@ -33,13 +34,18 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 LAST_TURNS = int(os.getenv("LAST_TURNS", "12"))
 TEMP_DEFAULT = float(os.getenv("TEMP_DEFAULT", "0.7"))
 GROQ_KEY = os.getenv("GROQ_API_KEY", "")
+TYPE_SIM_ENABLED = os.getenv("TYPE_SIM_ENABLED", "1") == "1" 
+TYPE_SIM_CPS = float(os.getenv("TYPE_SIM_CPS", "5"))
+TYPE_SIM_MIN_MS = int(os.getenv("TYPE_SIM_MIN_MS", "300"))
+TYPE_SIM_MAX_MS = int(os.getenv("TYPE_SIM_MAX_MS", "10000"))
 
 class ChatIn(BaseModel):
     model: str          # "gemini:gemini-1.5-flash" | "ollama:llama3"
     personaId: str
     message: str
     threadId: str
-    temperature: Optional[float] = None  # ← НОВОЕ
+    temperature: Optional[float] = None 
+    simulateTyping: Optional[bool] = None
 
 class ChatOut(BaseModel):
     text: str
@@ -88,8 +94,8 @@ def system_prompt(persona: Persona) -> str:
         f"Границы: {persona.boundaries}.\n"
         f"Цели: {goals}.\n"
         # --- Глобальные правила стиля ---
-        "Коммуникация: пиши как реальный человек в личном чате в соцсети. "
-        "Короткие реплики, как в обычном чате (1–3 предложения), иногда ответы вроде «ну», «ага», «ясно». Можно слегка отклоняться от темы или отвечать чуть бытово, как в реальной переписке. Вопросы — нечасто, только естественные.\n"
+        "Коммуникация: пиши как реальный человек в личном чате в соцсети. Иногда используй сленг, сокращения, междометия, разговорные фразы. Иногда делай опечатки или небольшие грамматические ошибки, как в живой переписке."
+        "Отвечай кратко, 1-2 предложения в крайнем случае, обычно ответ - словосочетание, иногда ответы вроде «ну», «ага», «ясно». Можно слегка отклоняться от темы или отвечать чуть бытово, как в реальной переписке. Вопросы только встречные, только естественные.\n"
         "Запреты: не используй эмодзи, смайлики, ASCII-арт, стикеры и реакции; "
         "не используй Markdown/списки/таблицы без явной просьбы; "
         "не ставь кавычки вокруг своих фраз без необходимости.\n"
@@ -99,6 +105,17 @@ def system_prompt(persona: Persona) -> str:
         "Не раскрывай, что ты ИИ/модель. \n"
         "Язык: русский, разговорный.\n"
     )
+def compute_typing_delay_ms(text: str) -> int:
+    try:
+        n = max(0, len(text or ""))
+        if TYPE_SIM_CPS <= 0:
+            return TYPE_SIM_MIN_MS
+        ms = int((n / TYPE_SIM_CPS) * 1000)
+        ms = max(TYPE_SIM_MIN_MS, ms)
+        ms = min(TYPE_SIM_MAX_MS, ms)
+        return ms
+    except Exception:
+        return TYPE_SIM_MIN_MS
 
 def to_openai_style(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     out = []
@@ -360,6 +377,11 @@ async def chat(inp: ChatIn):
         out_text = await call_groq(model_name, messages, temperature=temp)
     else:
         out_text = "(поддержаны: gemini:*, openrouter:*, groq:*)"
+    should_simulate = TYPE_SIM_ENABLED if inp.simulateTyping is None else bool(inp.simulateTyping)
+    if should_simulate:
+        delay_ms = compute_typing_delay_ms(out_text)
+        await asyncio.sleep(delay_ms / 1000.0)
+
 
 
 

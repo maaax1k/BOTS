@@ -385,6 +385,7 @@ export default function App() {
           message: text,
           threadId: threadIdRef.current,
           temperature,
+          simulateTyping: true,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -712,7 +713,7 @@ export default function App() {
                 <div>
                   Модель: <b>{model}</b> • Персона: <b>{activePersona?.name}</b>
                 </div>
-                <button className="text-xs text-gray-500 hover:text-gray-800" onClick={() => window?.setMessages?.([])}>
+                <button className="text-xs text-gray-500 hover:text-gray-800" onClick={() => setMessages([])}>
                   Очистить
                 </button>
               </div>
