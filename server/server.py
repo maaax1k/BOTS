@@ -16,7 +16,7 @@ import re
 import asyncio
 
 from db import session_scope
-from models import Persona, Thread, Message
+from models import Persona, Thread, Message, Setting
 
 load_dotenv()
 app = FastAPI(title="Chat API with SQLite")
@@ -84,8 +84,30 @@ class ThreadUpdateIn(BaseModel):
     model: Optional[str] = None
     summary: Optional[str] = None
 
+class SystemConfigOut(BaseModel):
+    global_prompt: str
 
-def system_prompt(persona: Persona) -> str:
+class SystemConfigIn(BaseModel):
+    global_prompt: str
+
+class SystemPromptOut(BaseModel):
+    prompt: str
+
+class SummaryIn(BaseModel):
+    summary: str
+
+def get_setting(session, key: str, default: str = "") -> str:
+    st = session.get(Setting, key)
+    return st.value if st and st.value is not None else default
+
+def set_setting(session, key: str, value: str):
+    st = session.get(Setting, key)
+    if st:
+        st.value = value
+    else:
+        session.add(Setting(key=key, value=value))
+
+def system_prompt(persona: Persona, global_prompt: str) -> str:
     goals = persona.goals
     return (
         f"Ты играешь роль: {persona.name}.\n"
@@ -93,17 +115,7 @@ def system_prompt(persona: Persona) -> str:
         f"Стиль: {persona.style}.\n"
         f"Границы: {persona.boundaries}.\n"
         f"Цели: {goals}.\n"
-        # --- Глобальные правила стиля ---
-        "Коммуникация: пиши как реальный человек в личном чате в соцсети. Иногда используй сленг, сокращения, междометия, разговорные фразы. Иногда делай опечатки или небольшие грамматические ошибки, как в живой переписке."
-        "Отвечай кратко, 1-2 предложения в крайнем случае, обычно ответ - словосочетание, иногда ответы вроде «ну», «ага», «ясно». Можно слегка отклоняться от темы или отвечать чуть бытово, как в реальной переписке. Вопросы только встречные, только естественные.\n"
-        "Запреты: не используй эмодзи, смайлики, ASCII-арт, стикеры и реакции; "
-        "не используй Markdown/списки/таблицы без явной просьбы; "
-        "не ставь кавычки вокруг своих фраз без необходимости.\n"
-        "Тон: естественный, дружелюбный, без искусственной приподнятости и шаблонных фраз. "
-        "Если чего-то не знаешь — скажи кратко и предложи уточнить. Без лишних дисклеймеров.\n"
-        "Персона: говори от первого лица, как обычный человек, сохраняй характер и границы персоны. "
-        "Не раскрывай, что ты ИИ/модель. \n"
-        "Язык: русский, разговорный.\n"
+        f"{global_prompt}".strip()
     )
 def compute_typing_delay_ms(text: str) -> int:
     try:
@@ -344,6 +356,8 @@ async def chat(inp: ChatIn):
         persona = s.get(Persona, inp.personaId)
         if not persona:
             raise HTTPException(404, "persona not found")
+        
+        global_prompt = get_setting(s, "global_prompt", "")
 
         thread = s.get(Thread, inp.threadId)
         if not thread:
@@ -361,7 +375,7 @@ async def chat(inp: ChatIn):
         ).scalars().all()[::-1]
 
         messages = [
-            {"role": "system", "content": system_prompt(persona)},
+            {"role": "system", "content": system_prompt(persona, global_prompt)},
             {"role": "system", "content": f"Контекст: {thread.summary or 'пока пусто'}"},
         ] + [{"role": m.role, "content": m.content} for m in last_msgs]
 
@@ -417,8 +431,18 @@ def get_messages(thread_id: str):
         rows = s.execute(select(Message).where(Message.thread_id==thread_id).order_by(Message.created_at)).scalars().all()
         return [MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at.isoformat()) for m in rows]
 
-class SummaryIn(BaseModel):
-    summary: str
+@app.get("/api/system", response_model=SystemConfigOut)
+def get_system_config():
+    with session_scope() as s:
+        gp = get_setting(s, "global_prompt", "")
+        return SystemConfigOut(global_prompt=gp)
+
+@app.patch("/api/system", response_model=SystemConfigOut)
+def update_system_config(data: SystemConfigIn):
+    with session_scope() as s:
+        set_setting(s, "global_prompt", data.global_prompt or "")
+        gp = get_setting(s, "global_prompt", "")
+        return SystemConfigOut(global_prompt=gp)
 
 @app.patch("/api/threads/{thread_id}")
 def update_thread(thread_id: str, inp: ThreadUpdateIn):
@@ -485,7 +509,8 @@ def get_persona_system_prompt(pid: str):
         p = s.get(Persona, pid)
         if not p:
             raise HTTPException(404, "persona not found")
-        return {"prompt": system_prompt(p)}
+        gp = get_setting(s, "global_prompt", "")
+        return SystemPromptOut(prompt=system_prompt(p, gp))
 
 
 @app.delete("/api/threads/{thread_id}")

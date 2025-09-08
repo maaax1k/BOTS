@@ -1,20 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 
-// This single-file React app provides a local web UI to test multiple personas
-// (friendly / romantic / neutral) across multiple LLM providers (OpenAI, Gemini, etc.).
-// It expects a local backend at POST /api/chat with JSON body:
-// {
-//   model: string,            // e.g. "openai:gpt-4o-mini" or "gemini:gemini-1.5-flash"
-//   personaId: string,        // e.g. "friendly"
-//   message: string,
-//   threadId: string          // stable per session/tab to keep memory server-side
-// }
-// and response: { text: string }
-//
-// If there's no backend running, enable "Mock mode" to simulate responses.
-
-// --- Personas (editable defaults) ---
 const DEFAULT_PERSONAS = {
   friendly: {
     id: "friendly",
@@ -47,12 +33,6 @@ const MODEL_OPTIONS = [
   { value: "gemini:gemini-2.5-flash", label: "Google: Gemini — 2.5 Flash" },
   { value: "gemini:gemini-2.0-flash", label: "Google: Gemini — 2.0 Flash" },
   { value: "gemini:gemini-1.5-flash", label: "Google: Gemini — 1.5 Flash" },
-  // { value: "ollama:llama3", label: "Ollama — Llama 3 (локально)" },
-  // { value: "ollama:mistral", label: "Ollama — Mistral (локально)" },
-  // { value: "ollama:gemma2:9b", label: "Ollama — Gemma 2 9B (локально)" },
-  // { value: "ollama:gpt-oss:20b", label: "Ollama — GPT OSS 20B (локально)" },
-  // { value: "ollama:deepseek-r1:8b", label: "Ollama — Deepseek-R1 8B (локально)" },
-  // { value: "ollama:qwen3:8b", label: "Ollama — Qwen 3 8B (локально)" },
   { value: "openrouter:openai/gpt-oss-20b:free", label: "OpenRouter: GPT-OSS 20B" },
   { value: "openrouter:moonshotai/kimi-k2:free", label: "OpenRouter: MoonshotAI: Kimi K2" },
   { value: "openrouter:cognitivecomputations/dolphin-mistral-24b-venice-edition:free", label: "OpenRouter: Venice - Uncensored" },
@@ -105,6 +85,7 @@ export default function App() {
   const [botsTranscript, setBotsTranscript] = useState([]); // [{from:"A"|"B", text:string}]
   const [botsLast, setBotsLast] = useState(""); // последняя реплика (для передачи другому)
   const [botsTurns, setBotsTurns] = useState(0);
+  const [globalPrompt, setGlobalPrompt] = useState("");
 
   const [editingPersona, setEditingPersona] = useState(false);
   const threadIdRef = useRef(uuidv4());
@@ -314,6 +295,34 @@ export default function App() {
   useEffect(() => saveSetting("bots_max", maxExchanges), [maxExchanges]);
   useEffect(() => saveSetting("bots_delay", delayMs), [delayMs]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${apiBase}/system`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        setGlobalPrompt(data.global_prompt || "");
+      }
+      catch (e) {
+        console.warn("Не удалось загрузить системные настройки:", e);
+      }
+    })();
+  }, [apiBase]);
+
+  async function saveGlobalPrompt() {
+    try {
+      const r = await fetch(`${apiBase}/system`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ global_prompt: globalPrompt}),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await fetchSystemPrompt(personaId);
+    } catch (e) {
+      alert(`Не удалось сохранить системные настройки: ${e.message || e}`);
+    }
+  }
+
   async function savePersonaToServer() {
     const p = personas[personaId];
     try {
@@ -449,11 +458,8 @@ export default function App() {
   async function startBots() {
     if (botsRunningRef.current) return;
 
-    // локальные снимки конфигов + новые threadId для этой сессии
     const aLocal = { ...agentA, threadId: uuidv4() };
     const bLocal = { ...agentB, threadId: uuidv4() };
-
-    // синхронизируем в UI (асинхронно, цикл использует локальные aLocal/bLocal)
     setAgentA(a => ({ ...a, threadId: aLocal.threadId }));
     setAgentB(b => ({ ...b, threadId: bLocal.threadId }));
 
@@ -463,8 +469,8 @@ export default function App() {
     setBotsRunning(true);
 
     let last = (seedText && seedText.trim()) || "Привет! Давай пообщаемся.";
-    let turns = 1;       // локальный счётчик
-    let current = "A";   // последним говорил A → теперь отвечает B
+    let turns = 1;
+    let current = "A";
 
     // первая запись — реплика A
     setBotsTranscript([{ from: "A", text: last }]);
@@ -832,10 +838,20 @@ export default function App() {
                       }
                     />
                   </label>
+                  <label className="block">
+                    <div className="text-sm text-gray-600">Глобальный промпт (применим ко всем персонам)</div>
+                    <textarea
+                      className="w-full rounded-xl border px-3 py-2"
+                      rows={2}
+                      value={globalPrompt}
+                      onChange={(e) => setGlobalPrompt(e.target.value)}
+                      placeholder="Единые правила/стиль для всех персон"
+                    />
+                  </label>
                   <div className="flex justify-end pt-1">
                     <button
                       className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow-md hover:bg-blue-700 active:bg-blue-800"
-                      onClick={savePersonaToServer}
+                      onClick={() => {savePersonaToServer(); saveGlobalPrompt(); setEditingPersona(false);}}
                     >
                       Сохранить персону
                     </button>

@@ -7,7 +7,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy import inspect
 
 from db import engine, session_scope
-from models import Base, Persona, Thread
+from models import Base, Persona, Thread, Setting
 
 # Можно задать дефолтную модель для новых/мигрируемых тредов через .env
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gemini:gemini-1.5-flash")
@@ -88,6 +88,19 @@ DEFAULT_PERSONAS = [
 
 ]
 
+DEFAULT_GLOBAL_PROMOPT = (
+    "Коммуникация: пиши как реальный человек в личном чате в соцсети. Иногда используй сленг, сокращения, междометия, разговорные фразы. Иногда делай опечатки или небольшие грамматические ошибки, как в живой переписке."
+    "Отвечай кратко, 1-2 предложения в крайнем случае, обычно ответ - словосочетание, иногда ответы вроде «ну», «ага», «ясно». Можно слегка отклоняться от темы или отвечать чуть бытово, как в реальной переписке. Вопросы только встречные, только естественные. Если просят скинуть фотографию, тебя нужно немного поуговаривать. Если намереваешься отправить фото - отвечать "/photo".\n"
+    "Запреты: не используй эмодзи, смайлики, ASCII-арт, стикеры и реакции; "
+    "не используй Markdown/списки/таблицы без явной просьбы; "
+    "не ставь кавычки вокруг своих фраз без необходимости.\n"
+    "Тон: естественный, дружелюбный, без искусственной приподнятости и шаблонных фраз. "
+    "Если чего-то не знаешь — скажи кратко и предложи уточнить. Без лишних дисклеймеров.\n"
+    "Персона: говори от первого лица, как обычный человек, сохраняй характер и границы персоны. "
+    "Не раскрывай, что ты ИИ/модель. \n"
+    "Язык: русский, разговорный.\n"
+)
+
 def ensure_threads_model_column(e: Engine):
     insp = inspect(e)
     try:
@@ -116,6 +129,12 @@ def backfill_threads_model_if_empty():
             {"m": DEFAULT_MODEL},
         )
 
+def fill_global_prompt_setting():
+    with session_scope() as s:
+        existing = s.get(Setting, "global_prompt")
+        if not existing:
+            s.add(Setting(key="global_prompt", value=DEFAULT_GLOBAL_PROMOPT))   
+
 def main():
 
     Base.metadata.create_all(engine)
@@ -125,6 +144,8 @@ def main():
     seed_personas()
 
     backfill_threads_model_if_empty()
+
+    fill_global_prompt_setting()
 
     print("DB init OK. DEFAULT_MODEL =", DEFAULT_MODEL)
 
